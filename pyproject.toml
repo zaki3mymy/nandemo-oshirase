@@ -1,0 +1,18 @@
+[project]
+name = "nandemo-oshirase"
+version = "0.1.0"
+description = "A simple notification app that sends messages to LINE"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
