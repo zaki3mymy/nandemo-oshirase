@@ -78,9 +78,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if not channel_token:
         return {
             "statusCode": 500,
-            "body": json.dumps(
-                {"error": "LINE_CHANNEL_TOKEN environment variable not set"}
-            ),
+            "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
         }
 
     user_id = os.environ.get("LINE_USER_ID")
@@ -115,7 +113,5 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     return {
         "statusCode": 200,
-        "body": json.dumps(
-            {"message": f"Successfully sent {len(messages)} message(s)"}
-        ),
+        "body": json.dumps({"message": f"Successfully sent {len(messages)} message(s)"}),
     }

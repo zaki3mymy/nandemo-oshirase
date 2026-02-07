@@ -12,9 +12,7 @@ class TestPushMessages:
     def test_push_messages_success(self):
         messages = [{"type": "text", "text": "Hello"}]
 
-        with patch(
-            "nandemo_oshirase.lambda_function.urllib.request.urlopen"
-        ) as mock_urlopen:
+        with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
             mock_response = MagicMock()
             mock_response.status = 200
             mock_response.read.return_value = b"{}"
@@ -43,9 +41,7 @@ class TestPushMessages:
             {"type": "text", "text": "World"},
         ]
 
-        with patch(
-            "nandemo_oshirase.lambda_function.urllib.request.urlopen"
-        ) as mock_urlopen:
+        with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
             mock_response = MagicMock()
             mock_response.status = 200
             mock_response.read.return_value = b"{}"
@@ -65,9 +61,7 @@ class TestPushMessages:
     def test_push_messages_api_error(self):
         messages = [{"type": "text", "text": "Hello"}]
 
-        with patch(
-            "nandemo_oshirase.lambda_function.urllib.request.urlopen"
-        ) as mock_urlopen:
+        with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
             from urllib.error import HTTPError
 
             mock_urlopen.side_effect = HTTPError(
