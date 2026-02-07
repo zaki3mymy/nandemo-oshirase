@@ -37,4 +37,18 @@ repos:
         types: [python]
         pass_filenames: false
 
+    -   id: terraform-fmt
+        name: Terraform format
+        entry: terraform fmt -check -recursive tf/
+        language: system
+        files: \.tf$
+        pass_filenames: false
+
+    -   id: terraform-validate
+        name: Terraform validate
+        entry: terraform -chdir=tf validate
+        language: system
+        files: \.tf$
+        pass_filenames: false
+
 default_install_hook_types: [pre-commit]
