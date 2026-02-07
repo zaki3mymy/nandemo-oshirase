@@ -15,7 +15,8 @@
       "Bash(uv run ty --help:*)",
       "Bash(uv run:*)",
       "Bash(terraform fmt:*)",
-      "Bash(terraform -chdir=tf validate:*)"
+      "Bash(terraform -chdir=tf validate:*)",
+      "Bash(AWS_PROFILE=admin terraform apply:*)"
     ]
   }
 }

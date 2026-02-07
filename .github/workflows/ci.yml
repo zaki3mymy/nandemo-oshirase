@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "tf/**"
+      - "pyproject.toml"
+      - ".pre-commit-config.yaml"
+      - ".python-version"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "tf/**"
+      - "pyproject.toml"
+      - ".pre-commit-config.yaml"
+      - ".python-version"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    name: Pre-commit checks
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.9.0"
+
+      - name: Terraform init (for validate)
+        run: terraform -chdir=tf init -backend=false
+
+      - name: Run pre-commit
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+
+  test:
+    runs-on: ubuntu-latest
+    name: Test with coverage
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest --cov-report=html --cov-report=term
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+
+  terraform-plan:
+    runs-on: ubuntu-latest
+    name: Terraform Plan
+    if: github.event_name == 'pull_request'
+    needs: pre-commit
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.9.0"
+
+      - name: Terraform Init
+        run: |
+          cd tf
+          terraform init \
+            -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="key=nandemo-oshirase/terraform.tfstate" \
+            -backend-config="region=ap-northeast-1"
+
+      - name: Terraform Plan
+        run: |
+          cd tf
+          terraform plan \
+            -var="line_channel_token=${{ secrets.LINE_CHANNEL_TOKEN }}" \
+            -var="line_user_id=${{ secrets.LINE_USER_ID }}"

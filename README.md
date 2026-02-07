@@ -4,20 +4,18 @@
 
 ## デプロイ
 
-```bash
-cd tf
-cp example.tfvars terraform.tfvars
-# terraform.tfvars を編集（LINE_CHANNEL_TOKEN, LINE_USER_ID を設定）
-terraform init
-terraform apply
-```
+mainブランチへのマージ時にGitHub Actionsで自動デプロイされます。
 
-デプロイ後、エンドポイントURLとAPIキーが出力されます。
+### GitHub Secrets
 
-```bash
-terraform output api_endpoint
-terraform output -raw api_key
-```
+以下のシークレットを設定してください:
+
+| Secret | 説明 |
+|--------|------|
+| `AWS_ROLE_ARN` | OIDC認証用のIAMロールARN |
+| `TERRAFORM_STATE_BUCKET` | Terraform state用S3バケット名 |
+| `LINE_CHANNEL_TOKEN` | LINE Messaging API Channel Access Token |
+| `LINE_USER_ID` | 通知先のLINE User ID |
 
 ## 使い方
 
@@ -35,4 +33,17 @@ curl -X POST <ENDPOINT> \
   -H "x-api-key: <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"messages": ["1つ目", "2つ目", "3つ目"]}'
+```
+
+## 開発
+
+```bash
+# 依存関係のインストール
+uv sync --dev
+
+# テスト実行
+uv run pytest
+
+# pre-commitフックのインストール
+uv run pre-commit install
 ```
