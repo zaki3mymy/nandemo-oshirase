@@ -37,7 +37,7 @@ def validate_messages(messages: list[str]) -> list[str]:
 
 def format_line_messages(messages: list[str]) -> list[dict[str, str]]:
     """Format messages for LINE Messaging API."""
-    pass
+    return [{"type": "text", "text": msg} for msg in messages]
 
 
 def split_into_batches(messages: list[dict[str, str]], batch_size: int = 5) -> list[list[dict[str, str]]]:
