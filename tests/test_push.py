@@ -74,7 +74,7 @@ class TestPushMessages:
                 url="https://api.line.me/v2/bot/message/push",
                 code=400,
                 msg="Bad Request",
-                hdrs={},
+                hdrs=MagicMock(),
                 fp=MagicMock(read=lambda: b'{"message": "Invalid request"}'),
             )
 
