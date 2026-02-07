@@ -49,7 +49,20 @@ def split_into_batches(messages: list[dict[str, str]], batch_size: int = 5) -> l
 
 def push_messages(messages: list[dict[str, str]], channel_token: str, user_id: str) -> dict[str, Any]:
     """Send messages to LINE Messaging API."""
-    pass
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {channel_token}",
+    }
+    body = json.dumps({"to": user_id, "messages": messages}).encode("utf-8")
+
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            return {"statusCode": response.status, "body": response.read().decode("utf-8")}
+    except urllib.error.HTTPError as e:
+        return {"statusCode": e.code, "error": e.reason}
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
