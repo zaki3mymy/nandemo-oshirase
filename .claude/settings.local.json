@@ -6,7 +6,9 @@
       "Bash(uv add:*)",
       "Bash(uv run pytest:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(terraform init:*)",
+      "Bash(terraform validate:*)"
     ]
   }
 }
