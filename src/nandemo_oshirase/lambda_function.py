@@ -42,7 +42,9 @@ def format_line_messages(messages: list[str]) -> list[dict[str, str]]:
 
 def split_into_batches(messages: list[dict[str, str]], batch_size: int = 5) -> list[list[dict[str, str]]]:
     """Split messages into batches."""
-    pass
+    if not messages:
+        return []
+    return [messages[i:i + batch_size] for i in range(0, len(messages), batch_size)]
 
 
 def push_messages(messages: list[dict[str, str]], channel_token: str, user_id: str) -> dict[str, Any]:
