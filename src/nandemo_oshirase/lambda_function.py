@@ -32,7 +32,7 @@ def parse_request(event: dict[str, Any]) -> list[str]:
 
 def validate_messages(messages: list[str]) -> list[str]:
     """Validate and filter messages."""
-    pass
+    return [msg for msg in messages if msg.strip()]
 
 
 def format_line_messages(messages: list[str]) -> list[dict[str, str]]:
