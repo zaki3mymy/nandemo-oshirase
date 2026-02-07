@@ -1,7 +1,5 @@
 """Tests for validate_messages function."""
 
-import pytest
-
 from nandemo_oshirase.lambda_function import validate_messages
 
 

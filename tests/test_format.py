@@ -1,7 +1,5 @@
 """Tests for format_line_messages function."""
 
-import pytest
-
 from nandemo_oshirase.lambda_function import format_line_messages
 
 

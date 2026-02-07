@@ -40,14 +40,18 @@ def format_line_messages(messages: list[str]) -> list[dict[str, str]]:
     return [{"type": "text", "text": msg} for msg in messages]
 
 
-def split_into_batches(messages: list[dict[str, str]], batch_size: int = 5) -> list[list[dict[str, str]]]:
+def split_into_batches(
+    messages: list[dict[str, str]], batch_size: int = 5
+) -> list[list[dict[str, str]]]:
     """Split messages into batches."""
     if not messages:
         return []
-    return [messages[i:i + batch_size] for i in range(0, len(messages), batch_size)]
+    return [messages[i : i + batch_size] for i in range(0, len(messages), batch_size)]
 
 
-def push_messages(messages: list[dict[str, str]], channel_token: str, user_id: str) -> dict[str, Any]:
+def push_messages(
+    messages: list[dict[str, str]], channel_token: str, user_id: str
+) -> dict[str, Any]:
     """Send messages to LINE Messaging API."""
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
@@ -60,7 +64,10 @@ def push_messages(messages: list[dict[str, str]], channel_token: str, user_id: s
 
     try:
         with urllib.request.urlopen(request) as response:
-            return {"statusCode": response.status, "body": response.read().decode("utf-8")}
+            return {
+                "statusCode": response.status,
+                "body": response.read().decode("utf-8"),
+            }
     except urllib.error.HTTPError as e:
         return {"statusCode": e.code, "error": e.reason}
 
@@ -71,7 +78,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if not channel_token:
         return {
             "statusCode": 500,
-            "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
+            "body": json.dumps(
+                {"error": "LINE_CHANNEL_TOKEN environment variable not set"}
+            ),
         }
 
     user_id = os.environ.get("LINE_USER_ID")
@@ -106,5 +115,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     return {
         "statusCode": 200,
-        "body": json.dumps({"message": f"Successfully sent {len(messages)} message(s)"}),
+        "body": json.dumps(
+            {"message": f"Successfully sent {len(messages)} message(s)"}
+        ),
     }

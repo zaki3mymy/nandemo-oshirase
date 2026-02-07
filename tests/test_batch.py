@@ -1,7 +1,5 @@
 """Tests for split_into_batches function."""
 
-import pytest
-
 from nandemo_oshirase.lambda_function import split_into_batches
 
 
