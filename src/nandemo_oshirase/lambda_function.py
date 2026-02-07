@@ -67,4 +67,44 @@ def push_messages(messages: list[dict[str, str]], channel_token: str, user_id: s
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Main Lambda handler."""
-    pass
+    channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
+    if not channel_token:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
+        }
+
+    user_id = os.environ.get("LINE_USER_ID")
+    if not user_id:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "LINE_USER_ID environment variable not set"}),
+        }
+
+    try:
+        raw_messages = parse_request(event)
+    except ValueError as e:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": str(e)}),
+        }
+
+    messages = validate_messages(raw_messages)
+    if not messages:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "No valid messages to send"}),
+        }
+
+    formatted = format_line_messages(messages)
+    batches = split_into_batches(formatted)
+
+    for batch in batches:
+        result = push_messages(batch, channel_token, user_id)
+        if result["statusCode"] != 200:
+            return result
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"message": f"Successfully sent {len(messages)} message(s)"}),
+    }
