@@ -46,6 +46,7 @@ htmlcov/
 .terraform.lock.hcl
 *.tfvars
 !example.tfvars
+*.zip
 
 # OS
 .DS_Store
