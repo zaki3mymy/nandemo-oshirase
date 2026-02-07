@@ -1,7 +1,7 @@
 """Tests for push_messages function."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from nandemo_oshirase.lambda_function import push_messages
 

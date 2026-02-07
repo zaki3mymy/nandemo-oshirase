@@ -2,9 +2,9 @@
 
 import base64
 import json
-import urllib.request
-import urllib.error
 import os
+import urllib.error
+import urllib.request
 from typing import Any
 
 

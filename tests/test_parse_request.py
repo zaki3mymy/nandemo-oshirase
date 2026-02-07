@@ -2,6 +2,7 @@
 
 import base64
 import json
+
 import pytest
 
 from nandemo_oshirase.lambda_function import parse_request
