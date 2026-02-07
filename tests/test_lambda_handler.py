@@ -109,3 +109,19 @@ class TestLambdaHandlerInvalidRequest:
             assert result["statusCode"] == 400
             body = json.loads(result["body"])
             assert "error" in body
+
+
+class TestLambdaHandlerPushError:
+    """Test lambda handler when push_messages fails."""
+
+    def test_lambda_handler_push_error(self):
+        event = {"body": json.dumps({"message": "Hello"})}
+
+        with patch.dict(os.environ, {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"}):
+            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+                mock_push.return_value = {"statusCode": 400, "error": "Bad Request"}
+
+                result = lambda_handler(event, None)
+
+                assert result["statusCode"] == 400
+                assert result["error"] == "Bad Request"
