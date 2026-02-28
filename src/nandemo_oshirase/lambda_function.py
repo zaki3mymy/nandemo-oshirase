@@ -9,7 +9,7 @@ import urllib.request
 from typing import Any
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
 
 
 def parse_request(event: dict[str, Any]) -> list[str]:

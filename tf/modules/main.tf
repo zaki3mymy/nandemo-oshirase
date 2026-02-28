@@ -41,6 +41,7 @@ resource "aws_lambda_function" "notify" {
     variables = {
       LINE_CHANNEL_TOKEN = var.line_channel_token
       LINE_USER_ID       = var.line_user_id
+      LOG_LEVEL          = var.log_level
     }
   }
 }
