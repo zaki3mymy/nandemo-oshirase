@@ -2,10 +2,14 @@
 
 import base64
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
 from typing import Any
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def parse_request(event: dict[str, Any]) -> list[str]:
@@ -15,6 +19,7 @@ def parse_request(event: dict[str, Any]) -> list[str]:
         raise ValueError("Invalid JSON: empty body")
 
     if event.get("isBase64Encoded"):
+        logger.debug("Decoding Base64-encoded body")
         body = base64.b64decode(body).decode("utf-8")
 
     try:
@@ -23,8 +28,10 @@ def parse_request(event: dict[str, Any]) -> list[str]:
         raise ValueError(f"Invalid JSON: {e}") from e
 
     if "message" in data:
+        logger.info("Parsed single message from request")
         return [data["message"]]
     elif "messages" in data:
+        logger.info("Parsed %d message(s) from request", len(data["messages"]))
         return data["messages"]
     else:
         raise ValueError("No message or messages key found")
@@ -32,7 +39,11 @@ def parse_request(event: dict[str, Any]) -> list[str]:
 
 def validate_messages(messages: list[str]) -> list[str]:
     """Validate and filter messages."""
-    return [msg for msg in messages if msg.strip()]
+    validated = [msg for msg in messages if msg.strip()]
+    skipped = len(messages) - len(validated)
+    if skipped:
+        logger.warning("Skipped %d empty message(s)", skipped)
+    return validated
 
 
 def format_line_messages(messages: list[str]) -> list[dict[str, str]]:
@@ -60,22 +71,27 @@ def push_messages(
     }
     body = json.dumps({"to": user_id, "messages": messages}).encode("utf-8")
 
+    logger.info("Sending %d message(s) to LINE API (user_id=%s)", len(messages), user_id)
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
 
     try:
         with urllib.request.urlopen(request) as response:
-            return {
-                "statusCode": response.status,
-                "body": response.read().decode("utf-8"),
-            }
+            status = response.status
+            response_body = response.read().decode("utf-8")
+            logger.info("LINE API responded with status %d", status)
+            return {"statusCode": status, "body": response_body}
     except urllib.error.HTTPError as e:
+        logger.error("LINE API error: status=%d reason=%s", e.code, e.reason)
         return {"statusCode": e.code, "error": e.reason}
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Main Lambda handler."""
+    logger.info("Lambda invoked")
+
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
     if not channel_token:
+        logger.error("LINE_CHANNEL_TOKEN is not set")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
@@ -83,6 +99,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     user_id = os.environ.get("LINE_USER_ID")
     if not user_id:
+        logger.error("LINE_USER_ID is not set")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "LINE_USER_ID environment variable not set"}),
@@ -91,6 +108,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         raw_messages = parse_request(event)
     except ValueError as e:
+        logger.warning("Failed to parse request: %s", e)
         return {
             "statusCode": 400,
             "body": json.dumps({"error": str(e)}),
@@ -98,6 +116,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     messages = validate_messages(raw_messages)
     if not messages:
+        logger.warning("No valid messages after validation")
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "No valid messages to send"}),
@@ -105,12 +124,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     formatted = format_line_messages(messages)
     batches = split_into_batches(formatted)
+    logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
-    for batch in batches:
+    for i, batch in enumerate(batches, start=1):
+        logger.debug("Sending batch %d/%d", i, len(batches))
         result = push_messages(batch, channel_token, user_id)
         if result["statusCode"] != 200:
+            logger.error("Batch %d failed: %s", i, result)
             return result
 
+    logger.info("All messages sent successfully")
     return {
         "statusCode": 200,
         "body": json.dumps({"message": f"Successfully sent {len(messages)} message(s)"}),
