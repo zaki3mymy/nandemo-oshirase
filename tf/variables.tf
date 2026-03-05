@@ -21,3 +21,9 @@ variable "aws_region" {
   type        = string
   default     = "ap-northeast-1"
 }
+
+variable "log_level" {
+  description = "Log level for Lambda function (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+  type        = string
+  default     = "INFO"
+}

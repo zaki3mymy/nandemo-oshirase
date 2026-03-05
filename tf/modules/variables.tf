@@ -20,3 +20,9 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "log_level" {
+  description = "Log level for Lambda function (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+  type        = string
+  default     = "INFO"
+}
