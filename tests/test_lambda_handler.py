@@ -149,6 +149,26 @@ class TestLambdaHandlerInvalidRequest:
             assert json.loads(result["body"]).keys() == {"error"}
 
 
+class TestLambdaHandlerDocs:
+    """Test GET /docs endpoint."""
+
+    def test_docs_returns_200(self):
+        event = {"httpMethod": "GET", "path": "/docs"}
+        result = lambda_handler(event, None)
+        assert result["statusCode"] == 200
+
+    def test_docs_content_type_html(self):
+        event = {"httpMethod": "GET", "path": "/docs"}
+        result = lambda_handler(event, None)
+        assert result["headers"]["Content-Type"] == "text/html"
+
+    def test_docs_body_contains_openapi(self):
+        event = {"httpMethod": "GET", "path": "/docs"}
+        result = lambda_handler(event, None)
+        body = result["body"].lower()
+        assert "swagger" in body or "openapi" in body
+
+
 class TestLambdaHandlerPushError:
     """Test lambda handler when push_messages fails."""
 

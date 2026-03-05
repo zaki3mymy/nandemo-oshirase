@@ -86,9 +86,24 @@ def push_messages(
         return {"statusCode": e.code, "body": json.dumps({"error": e.reason})}
 
 
+def serve_docs() -> dict[str, Any]:
+    """Return Swagger UI HTML for GET /docs."""
+    html_path = os.path.join(os.path.dirname(__file__), "docs.html")
+    with open(html_path) as f:
+        html = f.read()
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "text/html"},
+        "body": html,
+    }
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Main Lambda handler."""
     logger.info("Lambda invoked")
+
+    if event.get("httpMethod") == "GET" and event.get("path") == "/docs":
+        return serve_docs()
 
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
     if not channel_token:
