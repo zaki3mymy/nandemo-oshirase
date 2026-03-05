@@ -74,5 +74,5 @@ class TestPushMessages:
 
             result = push_messages(messages, "test_token", "test_user_id")
 
-            assert result["statusCode"] == 400
-            assert "error" in result
+            expected = {"statusCode": 400, "body": json.dumps({"error": "Bad Request"})}
+            assert result == expected
