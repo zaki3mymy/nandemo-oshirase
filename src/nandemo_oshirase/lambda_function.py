@@ -98,13 +98,8 @@ def serve_docs() -> dict[str, Any]:
     }
 
 
-def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
-    """Main Lambda handler."""
-    logger.info("Lambda invoked")
-
-    if event.get("httpMethod") == "GET" and event.get("path") == "/docs":
-        return serve_docs()
-
+def handle_notify(event: dict[str, Any]) -> dict[str, Any]:
+    """Handle POST /notify: send messages via LINE."""
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
     if not channel_token:
         logger.error("LINE_CHANNEL_TOKEN is not set")
@@ -154,3 +149,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         "statusCode": 200,
         "body": json.dumps({"message": f"Successfully sent {len(messages)} message(s)"}),
     }
+
+
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """Route requests to the appropriate handler."""
+    logger.info("Lambda invoked")
+
+    if event.get("httpMethod") == "GET" and event.get("path") == "/docs":
+        return serve_docs()
+
+    return handle_notify(event)
