@@ -22,7 +22,11 @@ class TestLambdaHandlerSuccess:
 
                 result = lambda_handler(event, None)
 
-                assert result["statusCode"] == 200
+                expected = {
+                    "statusCode": 200,
+                    "body": json.dumps({"message": "Successfully sent 1 message(s)"}),
+                }
+                assert result == expected
                 mock_push.assert_called_once()
                 call_args = mock_push.call_args[0]
                 assert call_args[0] == [{"type": "text", "text": "Hello"}]
@@ -41,7 +45,11 @@ class TestLambdaHandlerSuccess:
 
                 result = lambda_handler(event, None)
 
-                assert result["statusCode"] == 200
+                expected = {
+                    "statusCode": 200,
+                    "body": json.dumps({"message": "Successfully sent 2 message(s)"}),
+                }
+                assert result == expected
 
     def test_lambda_handler_success_batch_messages(self):
         event = {"body": json.dumps({"messages": [f"msg{i}" for i in range(7)]})}
@@ -55,7 +63,11 @@ class TestLambdaHandlerSuccess:
 
                 result = lambda_handler(event, None)
 
-                assert result["statusCode"] == 200
+                expected = {
+                    "statusCode": 200,
+                    "body": json.dumps({"message": "Successfully sent 7 message(s)"}),
+                }
+                assert result == expected
                 assert mock_push.call_count == 2
 
 
@@ -71,9 +83,11 @@ class TestLambdaHandlerNoMessages:
         ):
             result = lambda_handler(event, None)
 
-            assert result["statusCode"] == 400
-            body = json.loads(result["body"])
-            assert "error" in body
+            expected = {
+                "statusCode": 400,
+                "body": json.dumps({"error": "No valid messages to send"}),
+            }
+            assert result == expected
 
     def test_lambda_handler_no_messages_all_empty_strings(self):
         event = {"body": json.dumps({"messages": ["", "  ", "\t"]})}
@@ -84,7 +98,11 @@ class TestLambdaHandlerNoMessages:
         ):
             result = lambda_handler(event, None)
 
-            assert result["statusCode"] == 400
+            expected = {
+                "statusCode": 400,
+                "body": json.dumps({"error": "No valid messages to send"}),
+            }
+            assert result == expected
 
 
 class TestLambdaHandlerMissingEnv:
@@ -96,9 +114,11 @@ class TestLambdaHandlerMissingEnv:
         with patch.dict(os.environ, {"LINE_USER_ID": "test_user"}, clear=True):
             result = lambda_handler(event, None)
 
-            assert result["statusCode"] == 500
-            body = json.loads(result["body"])
-            assert "LINE_CHANNEL_TOKEN" in body["error"]
+            expected = {
+                "statusCode": 500,
+                "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
+            }
+            assert result == expected
 
     def test_lambda_handler_missing_user_id(self):
         event = {"body": json.dumps({"message": "Hello"})}
@@ -106,9 +126,11 @@ class TestLambdaHandlerMissingEnv:
         with patch.dict(os.environ, {"LINE_CHANNEL_TOKEN": "test_token"}, clear=True):
             result = lambda_handler(event, None)
 
-            assert result["statusCode"] == 500
-            body = json.loads(result["body"])
-            assert "LINE_USER_ID" in body["error"]
+            expected = {
+                "statusCode": 500,
+                "body": json.dumps({"error": "LINE_USER_ID environment variable not set"}),
+            }
+            assert result == expected
 
 
 class TestLambdaHandlerInvalidRequest:
@@ -124,8 +146,7 @@ class TestLambdaHandlerInvalidRequest:
             result = lambda_handler(event, None)
 
             assert result["statusCode"] == 400
-            body = json.loads(result["body"])
-            assert "error" in body
+            assert json.loads(result["body"]).keys() == {"error"}
 
 
 class TestLambdaHandlerPushError:
@@ -139,9 +160,15 @@ class TestLambdaHandlerPushError:
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
             with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
-                mock_push.return_value = {"statusCode": 400, "error": "Bad Request"}
+                mock_push.return_value = {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Bad Request"}),
+                }
 
                 result = lambda_handler(event, None)
 
-                assert result["statusCode"] == 400
-                assert result["error"] == "Bad Request"
+                expected = {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Bad Request"}),
+                }
+                assert result == expected
