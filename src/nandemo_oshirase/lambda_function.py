@@ -83,7 +83,7 @@ def push_messages(
             return {"statusCode": status, "body": response_body}
     except urllib.error.HTTPError as e:
         logger.error("LINE API error: status=%d reason=%s", e.code, e.reason)
-        return {"statusCode": e.code, "error": e.reason}
+        return {"statusCode": e.code, "body": json.dumps({"error": e.reason})}
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:

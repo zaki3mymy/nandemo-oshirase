@@ -75,4 +75,4 @@ class TestPushMessages:
             result = push_messages(messages, "test_token", "test_user_id")
 
             assert result["statusCode"] == 400
-            assert "error" in result
+            assert "error" in json.loads(result["body"])
