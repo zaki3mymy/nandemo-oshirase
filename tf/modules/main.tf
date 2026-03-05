@@ -52,6 +52,39 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
   retention_in_days = var.log_retention_days
 }
 
+# IAM Role for API Gateway CloudWatch Logging
+resource "aws_iam_role" "api_gateway_cloudwatch" {
+  name = "${var.project_name}-apigw-cloudwatch-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "api_gateway_cloudwatch" {
+  role       = aws_iam_role.api_gateway_cloudwatch.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+}
+
+resource "aws_api_gateway_account" "main" {
+  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch.arn
+}
+
+# CloudWatch Log Group for API Gateway access logs
+resource "aws_cloudwatch_log_group" "api_gateway_logs" {
+  name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/prod"
+  retention_in_days = var.log_retention_days
+}
+
 # API Gateway REST API
 resource "aws_api_gateway_rest_api" "api" {
   name        = "${var.project_name}-api"
@@ -113,6 +146,33 @@ resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.api.id
   stage_name    = "prod"
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gateway_logs.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      httpMethod     = "$context.httpMethod"
+      resourcePath   = "$context.resourcePath"
+      status         = "$context.status"
+      responseLength = "$context.responseLength"
+      requestTime    = "$context.requestTime"
+    })
+  }
+
+  depends_on = [aws_api_gateway_account.main]
+}
+
+resource "aws_api_gateway_method_settings" "all" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  stage_name  = aws_api_gateway_stage.prod.stage_name
+  method_path = "*/*"
+
+  settings {
+    logging_level      = "INFO"
+    data_trace_enabled = false
+    metrics_enabled    = true
+  }
 }
 
 # API Key
