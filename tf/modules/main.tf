@@ -164,9 +164,13 @@ resource "aws_api_gateway_deployment" "deployment" {
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id
-  # 変更があるたびに再デプロイするためのハック
-  # https://qiita.com/tksugimoto/items/33f9fe6aa48a1343e360
-  description = "file hash: ${md5(file("${path.module}/main.tf"))}"
+
+  triggers = {
+    redeployment = "file hash: ${md5("${path.module}/main.tf")}"
+  }
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # API Gateway Stage
@@ -174,9 +178,6 @@ resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.api.id
   stage_name    = "prod"
-  # 変更があるたびに再デプロイするためのハック
-  # https://qiita.com/tksugimoto/items/33f9fe6aa48a1343e360
-  description = "file hash: ${md5(file("${path.module}/main.tf"))}"
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway_logs.arn
