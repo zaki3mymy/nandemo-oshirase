@@ -164,10 +164,9 @@ resource "aws_api_gateway_deployment" "deployment" {
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id
-
-  lifecycle {
-    create_before_destroy = true
-  }
+  # 変更があるたびに再デプロイするためのハック
+  # https://qiita.com/tksugimoto/items/33f9fe6aa48a1343e360
+  description = "file hash: ${md5(file("${path.module}/main.tf"))}"
 }
 
 # API Gateway Stage
