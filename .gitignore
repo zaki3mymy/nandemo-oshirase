@@ -48,5 +48,8 @@ htmlcov/
 !example.tfvars
 *.zip
 
+# Generated files
+src/nandemo_oshirase/docs.html
+
 # OS
 .DS_Store

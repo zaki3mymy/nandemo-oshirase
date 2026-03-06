@@ -7,6 +7,7 @@ on:
       - "src/**"
       - "tests/**"
       - "tf/**"
+      - "openapi.yaml"
       - "pyproject.toml"
       - ".pre-commit-config.yaml"
       - ".python-version"
@@ -17,6 +18,7 @@ on:
       - "src/**"
       - "tests/**"
       - "tf/**"
+      - "openapi.yaml"
       - "pyproject.toml"
       - ".pre-commit-config.yaml"
       - ".python-version"
@@ -37,6 +39,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
+
+      - name: Build docs
+        run: npx --yes @redocly/cli build-docs openapi.yaml --output src/nandemo_oshirase/docs.html
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -63,6 +68,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
+
+      - name: Build docs
+        run: npx --yes @redocly/cli build-docs openapi.yaml --output src/nandemo_oshirase/docs.html
 
       - name: Run tests
         run: uv run pytest --cov-report=html --cov-report=term

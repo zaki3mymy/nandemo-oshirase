@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "tf/**"
+      - "openapi.yaml"
       - "pyproject.toml"
       - ".github/workflows/cd.yml"
   workflow_dispatch:
@@ -38,6 +39,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
+
+      - name: Build docs
+        run: npx --yes @redocly/cli build-docs openapi.yaml --output src/nandemo_oshirase/docs.html
 
       - name: Run tests before deployment
         run: uv run pytest --cov-report=term

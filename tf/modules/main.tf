@@ -130,9 +130,38 @@ resource "aws_lambda_permission" "api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }
 
+# API Gateway Resource: /docs
+resource "aws_api_gateway_resource" "docs" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "docs"
+}
+
+# API Gateway Method: GET /docs (APIキー不要)
+resource "aws_api_gateway_method" "docs_get" {
+  rest_api_id      = aws_api_gateway_rest_api.api.id
+  resource_id      = aws_api_gateway_resource.docs.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = false
+}
+
+# API Gateway Integration: GET /docs → Lambda
+resource "aws_api_gateway_integration" "docs_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.docs.id
+  http_method             = aws_api_gateway_method.docs_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.notify.invoke_arn
+}
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "deployment" {
-  depends_on = [aws_api_gateway_integration.lambda_integration]
+  depends_on = [
+    aws_api_gateway_integration.lambda_integration,
+    aws_api_gateway_integration.docs_integration,
+  ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id
 
