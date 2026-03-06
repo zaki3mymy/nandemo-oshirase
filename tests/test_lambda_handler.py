@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 from nandemo_oshirase.lambda_function import lambda_handler
@@ -151,6 +152,14 @@ class TestLambdaHandlerInvalidRequest:
 
 class TestLambdaHandlerDocs:
     """Test GET /docs endpoint."""
+
+    docs_html = Path(__file__).parent.parent / "src" / "nandemo_oshirase" / "docs.html"
+
+    def setup_method(self):
+        self.docs_html.write_text("<!DOCTYPE html><html><body>openapi</body></html>")
+
+    def teardown_method(self):
+        self.docs_html.unlink(missing_ok=True)
 
     def test_docs_returns_200(self):
         event = {"httpMethod": "GET", "path": "/docs"}
