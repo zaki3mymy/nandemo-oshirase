@@ -67,7 +67,7 @@ jobs:
             -var="line_user_id=${{ secrets.LINE_USER_ID }}" \
             -auto-approve
 
-      - name: Test Lambda deployment
+      - name: Test POST /notify
         run: |
           API_ENDPOINT=$(cd tf && terraform output -raw api_endpoint)
           API_KEY=$(cd tf && terraform output -raw api_key)
@@ -80,8 +80,23 @@ jobs:
           echo "Response: $RESPONSE"
 
           if echo "$RESPONSE" | grep -q "Successfully sent"; then
-            echo "Deployment test passed!"
+            echo "POST /notify test passed!"
           else
-            echo "Deployment test failed!"
+            echo "POST /notify test failed!"
+            exit 1
+          fi
+
+      - name: Test GET /docs
+        run: |
+          API_ENDPOINT=$(cd tf && terraform output -raw api_endpoint)
+          DOCS_URL="${API_ENDPOINT%/notify}/docs"
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$DOCS_URL")
+          echo "GET /docs status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "GET /docs test passed!"
+          else
+            echo "GET /docs test failed! Expected 200, got $HTTP_STATUS"
             exit 1
           fi
