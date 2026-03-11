@@ -14,7 +14,7 @@ terraform {
 
   # `terraform init`のときに`-backend-config`で以下の値を設定する
   # -backend-config="bucket=<BUCKET_NAME>"
-  # -backend-config="key=nandemo-oshirase/terraform.tfstate"
+  # -backend-config="key=nandemo-oshirase-dev/terraform.tfstate"
   # -backend-config="region=ap-northeast-1"
   backend "s3" {
   }
@@ -25,10 +25,11 @@ provider "aws" {
 }
 
 module "notify" {
-  source = "./modules"
+  source = "../../modules"
 
   project_name       = var.project_name
   line_channel_token = var.line_channel_token
   line_user_id       = var.line_user_id
   log_level          = var.log_level
+  stage_name         = "dev"
 }

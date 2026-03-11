@@ -46,7 +46,7 @@ repos:
 
     -   id: terraform-validate
         name: Terraform validate
-        entry: terraform -chdir=tf validate
+        entry: terraform -chdir=tf/envs/prod validate
         language: system
         files: \.tf$
         pass_filenames: false

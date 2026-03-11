@@ -81,7 +81,7 @@ resource "aws_api_gateway_account" "main" {
 
 # CloudWatch Log Group for API Gateway access logs
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
-  name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/prod"
+  name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/${var.stage_name}"
   retention_in_days = var.log_retention_days
 }
 
@@ -177,7 +177,7 @@ resource "aws_api_gateway_deployment" "deployment" {
 resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.api.id
-  stage_name    = "prod"
+  stage_name    = var.stage_name
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway_logs.arn

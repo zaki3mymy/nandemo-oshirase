@@ -1,14 +1,14 @@
-name: CD
+name: CD (dev)
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
     paths:
       - "src/**"
       - "tf/**"
       - "openapi.yaml"
       - "pyproject.toml"
-      - ".github/workflows/cd.yml"
+      - ".github/workflows/cd-dev.yml"
   workflow_dispatch:
 
 env:
@@ -21,7 +21,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: Deploy to AWS
+    name: Deploy to AWS (dev)
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -53,29 +53,29 @@ jobs:
 
       - name: Terraform Init
         run: |
-          cd tf/envs/prod
+          cd tf/envs/dev
           terraform init \
             -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
-            -backend-config="key=nandemo-oshirase/terraform.tfstate" \
+            -backend-config="key=nandemo-oshirase-dev/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Apply
         run: |
-          cd tf/envs/prod
+          cd tf/envs/dev
           terraform apply \
-            -var="line_channel_token=${{ secrets.LINE_CHANNEL_TOKEN }}" \
-            -var="line_user_id=${{ secrets.LINE_USER_ID }}" \
+            -var="line_channel_token=${{ secrets.DEV_LINE_CHANNEL_TOKEN }}" \
+            -var="line_user_id=${{ secrets.DEV_LINE_USER_ID }}" \
             -auto-approve
 
       - name: Test POST /notify
         run: |
-          API_ENDPOINT=$(cd tf/envs/prod && terraform output -raw api_endpoint)
-          API_KEY=$(cd tf/envs/prod && terraform output -raw api_key)
+          API_ENDPOINT=$(cd tf/envs/dev && terraform output -raw api_endpoint)
+          API_KEY=$(cd tf/envs/dev && terraform output -raw api_key)
 
           RESPONSE=$(curl -s -X POST "$API_ENDPOINT" \
             -H "x-api-key: $API_KEY" \
             -H "Content-Type: application/json" \
-            -d '{"message": "GitHub Actions deployment completed!"}')
+            -d '{"message": "GitHub Actions dev deployment completed!"}')
 
           echo "Response: $RESPONSE"
 
@@ -88,7 +88,7 @@ jobs:
 
       - name: Test GET /docs
         run: |
-          API_ENDPOINT=$(cd tf/envs/prod && terraform output -raw api_endpoint)
+          API_ENDPOINT=$(cd tf/envs/dev && terraform output -raw api_endpoint)
           DOCS_URL="${API_ENDPOINT%/notify}/docs"
 
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$DOCS_URL")
