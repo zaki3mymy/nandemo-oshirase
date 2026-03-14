@@ -14,7 +14,7 @@ terraform {
 
   # `terraform init`のときに`-backend-config`で以下の値を設定する
   # -backend-config="bucket=<BUCKET_NAME>"
-  # -backend-config="key=nandemo-oshirase-dev/terraform.tfstate"
+  # -backend-config="key=nandemo-oshirase/dev/terraform.tfstate"
   # -backend-config="region=ap-northeast-1"
   backend "s3" {
   }

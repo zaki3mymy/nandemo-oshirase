@@ -104,7 +104,7 @@ jobs:
             echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
           else
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase-dev/terraform.tfstate" >> $GITHUB_OUTPUT
+            echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure AWS credentials
