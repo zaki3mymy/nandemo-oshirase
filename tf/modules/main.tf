@@ -1,5 +1,5 @@
 locals {
-  name_prefix = "${var.project_name}-${var.stage_name}"
+  name_prefix = "${var.stage_name}-${var.project_name}"
 }
 
 data "archive_file" "lambda_zip" {
