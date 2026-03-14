@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "src/**"
       - "tf/**"
@@ -22,9 +22,21 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Deploy to AWS
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set environment config
+        id: config
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
+            echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
+          else
+            echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
+            echo "state_key=nandemo-oshirase-dev/terraform.tfstate" >> $GITHUB_OUTPUT
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
@@ -53,15 +65,15 @@ jobs:
 
       - name: Terraform Init
         run: |
-          cd tf/envs/prod
+          cd ${{ steps.config.outputs.tf_dir }}
           terraform init \
             -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
-            -backend-config="key=nandemo-oshirase/terraform.tfstate" \
+            -backend-config="key=${{ steps.config.outputs.state_key }}" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Apply
         run: |
-          cd tf/envs/prod
+          cd ${{ steps.config.outputs.tf_dir }}
           terraform apply \
             -var="line_channel_token=${{ secrets.LINE_CHANNEL_TOKEN }}" \
             -var="line_user_id=${{ secrets.LINE_USER_ID }}" \
@@ -69,8 +81,8 @@ jobs:
 
       - name: Test POST /notify
         run: |
-          API_ENDPOINT=$(cd tf/envs/prod && terraform output -raw api_endpoint)
-          API_KEY=$(cd tf/envs/prod && terraform output -raw api_key)
+          API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
+          API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
 
           RESPONSE=$(curl -s -X POST "$API_ENDPOINT" \
             -H "x-api-key: $API_KEY" \
@@ -88,7 +100,7 @@ jobs:
 
       - name: Test GET /docs
         run: |
-          API_ENDPOINT=$(cd tf/envs/prod && terraform output -raw api_endpoint)
+          API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           DOCS_URL="${API_ENDPOINT%/notify}/docs"
 
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$DOCS_URL")

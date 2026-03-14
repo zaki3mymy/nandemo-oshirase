@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "src/**"
       - "tests/**"
@@ -13,7 +13,7 @@ on:
       - ".python-version"
       - ".github/workflows/ci.yml"
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "src/**"
       - "tests/**"
@@ -88,12 +88,24 @@ jobs:
     name: Terraform Plan
     if: github.event_name == 'pull_request'
     needs: pre-commit
+    environment: ${{ github.base_ref == 'main' && 'prod' || 'develop' }}
     permissions:
       id-token: write
       contents: read
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set environment config
+        id: config
+        run: |
+          if [ "${{ github.base_ref }}" = "main" ]; then
+            echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
+            echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
+          else
+            echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
+            echo "state_key=nandemo-oshirase-dev/terraform.tfstate" >> $GITHUB_OUTPUT
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
@@ -108,15 +120,15 @@ jobs:
 
       - name: Terraform Init
         run: |
-          cd tf/envs/prod
+          cd ${{ steps.config.outputs.tf_dir }}
           terraform init \
             -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
-            -backend-config="key=nandemo-oshirase/terraform.tfstate" \
+            -backend-config="key=${{ steps.config.outputs.state_key }}" \
             -backend-config="region=ap-northeast-1"
 
       - name: Terraform Plan
         run: |
-          cd tf/envs/prod
+          cd ${{ steps.config.outputs.tf_dir }}
           terraform plan \
             -var="line_channel_token=${{ secrets.LINE_CHANNEL_TOKEN }}" \
             -var="line_user_id=${{ secrets.LINE_USER_ID }}"

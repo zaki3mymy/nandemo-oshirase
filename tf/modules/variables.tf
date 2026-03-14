@@ -30,5 +30,4 @@ variable "log_level" {
 variable "stage_name" {
   description = "API Gateway stage name"
   type        = string
-  default     = "prod"
 }
