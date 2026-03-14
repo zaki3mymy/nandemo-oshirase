@@ -13,7 +13,7 @@ variable "line_user_id" {
 variable "project_name" {
   description = "Project name for resource naming"
   type        = string
-  default     = "nandemo-oshirase-dev"
+  default     = "nandemo-oshirase"
 }
 
 variable "aws_region" {
