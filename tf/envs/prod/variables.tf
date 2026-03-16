@@ -1,8 +1,3 @@
-variable "project_name" {
-  description = "Project name for resource naming"
-  type        = string
-}
-
 variable "line_channel_token" {
   description = "LINE Messaging API Channel Access Token"
   type        = string
@@ -15,19 +10,20 @@ variable "line_user_id" {
   sensitive   = true
 }
 
-variable "log_retention_days" {
-  description = "CloudWatch Logs retention in days"
-  type        = number
-  default     = 14
+variable "project_name" {
+  description = "Project name for resource naming"
+  type        = string
+  default     = "nandemo-oshirase"
+}
+
+variable "aws_region" {
+  description = "AWS region to deploy resources"
+  type        = string
+  default     = "ap-northeast-1"
 }
 
 variable "log_level" {
   description = "Log level for Lambda function (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
   type        = string
   default     = "INFO"
-}
-
-variable "stage_name" {
-  description = "API Gateway stage name"
-  type        = string
 }
