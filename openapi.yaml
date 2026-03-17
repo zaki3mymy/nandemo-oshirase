@@ -79,6 +79,47 @@ paths:
                 properties:
                   error:
                     type: string
+  /webhook:
+    post:
+      summary: LINE Webhook receiver
+      description: LINEプラットフォームからのWebhookイベントを受け取り、ソースID（userID/groupId/roomId）をログに出力する
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                events:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      source:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            enum: [user, group, room]
+                          userId:
+                            type: string
+                          groupId:
+                            type: string
+                          roomId:
+                            type: string
+                        required:
+                          - type
+      responses:
+        "200":
+          description: 常に200を返す（LINE platformの要件）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: ok
 components:
   securitySchemes:
     ApiKeyAuth:
