@@ -5,14 +5,14 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from nandemo_oshirase.lambda_function import lambda_handler
+from nandemo_oshirase.lambda_function import LambdaEvent, lambda_handler
 
 
 class TestLambdaHandlerSuccess:
     """Test successful lambda handler execution."""
 
     def test_lambda_handler_success_single_message(self):
-        event = {"body": json.dumps({"message": "Hello"})}
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
         with patch.dict(
             os.environ,
@@ -35,7 +35,7 @@ class TestLambdaHandlerSuccess:
                 assert call_args[2] == "test_user"
 
     def test_lambda_handler_success_multiple_messages(self):
-        event = {"body": json.dumps({"messages": ["Hello", "World"]})}
+        event: LambdaEvent = {"body": json.dumps({"messages": ["Hello", "World"]})}
 
         with patch.dict(
             os.environ,
@@ -53,7 +53,7 @@ class TestLambdaHandlerSuccess:
                 assert result == expected
 
     def test_lambda_handler_success_batch_messages(self):
-        event = {"body": json.dumps({"messages": [f"msg{i}" for i in range(7)]})}
+        event: LambdaEvent = {"body": json.dumps({"messages": [f"msg{i}" for i in range(7)]})}
 
         with patch.dict(
             os.environ,
@@ -76,7 +76,7 @@ class TestLambdaHandlerNoMessages:
     """Test lambda handler with no valid messages."""
 
     def test_lambda_handler_no_messages_empty_list(self):
-        event = {"body": json.dumps({"messages": []})}
+        event: LambdaEvent = {"body": json.dumps({"messages": []})}
 
         with patch.dict(
             os.environ,
@@ -91,7 +91,7 @@ class TestLambdaHandlerNoMessages:
             assert result == expected
 
     def test_lambda_handler_no_messages_all_empty_strings(self):
-        event = {"body": json.dumps({"messages": ["", "  ", "\t"]})}
+        event: LambdaEvent = {"body": json.dumps({"messages": ["", "  ", "\t"]})}
 
         with patch.dict(
             os.environ,
@@ -110,7 +110,7 @@ class TestLambdaHandlerMissingEnv:
     """Test lambda handler with missing environment variables."""
 
     def test_lambda_handler_missing_token(self):
-        event = {"body": json.dumps({"message": "Hello"})}
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
         with patch.dict(os.environ, {"LINE_USER_ID": "test_user"}, clear=True):
             result = lambda_handler(event, None)
@@ -122,7 +122,7 @@ class TestLambdaHandlerMissingEnv:
             assert result == expected
 
     def test_lambda_handler_missing_user_id(self):
-        event = {"body": json.dumps({"message": "Hello"})}
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
         with patch.dict(os.environ, {"LINE_CHANNEL_TOKEN": "test_token"}, clear=True):
             result = lambda_handler(event, None)
@@ -138,7 +138,7 @@ class TestLambdaHandlerInvalidRequest:
     """Test lambda handler with invalid request."""
 
     def test_lambda_handler_invalid_json(self):
-        event = {"body": "not valid json"}
+        event: LambdaEvent = {"body": "not valid json"}
 
         with patch.dict(
             os.environ,
@@ -162,27 +162,42 @@ class TestLambdaHandlerDocs:
         self.docs_html.unlink(missing_ok=True)
 
     def test_docs_returns_200(self):
-        event = {"httpMethod": "GET", "path": "/docs"}
+        event: LambdaEvent = {"httpMethod": "GET", "path": "/docs"}
         result = lambda_handler(event, None)
         assert result["statusCode"] == 200
 
     def test_docs_content_type_html(self):
-        event = {"httpMethod": "GET", "path": "/docs"}
+        event: LambdaEvent = {"httpMethod": "GET", "path": "/docs"}
         result = lambda_handler(event, None)
         assert result["headers"]["Content-Type"] == "text/html"
 
     def test_docs_body_contains_openapi(self):
-        event = {"httpMethod": "GET", "path": "/docs"}
+        event: LambdaEvent = {"httpMethod": "GET", "path": "/docs"}
         result = lambda_handler(event, None)
         body = result["body"].lower()
         assert "swagger" in body or "openapi" in body
+
+
+class TestLambdaHandlerWebhook:
+    """Test routing to webhook handler."""
+
+    def test_routes_post_webhook_to_handle_webhook(self):
+        event: LambdaEvent = {
+            "httpMethod": "POST",
+            "path": "/webhook",
+            "body": json.dumps(
+                {"events": [{"source": {"type": "group", "groupId": "C123", "userId": "U456"}}]}
+            ),
+        }
+        result = lambda_handler(event, None)
+        assert result["statusCode"] == 200
 
 
 class TestLambdaHandlerPushError:
     """Test lambda handler when push_messages fails."""
 
     def test_lambda_handler_push_error(self):
-        event = {"body": json.dumps({"message": "Hello"})}
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
         with patch.dict(
             os.environ,
