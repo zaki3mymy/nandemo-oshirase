@@ -79,6 +79,8 @@ paths:
                 properties:
                   error:
                     type: string
+# /webhook はLINEプラットフォームが内部的に呼び出すエンドポイントであり、
+# APIユーザー向けのドキュメントには記載しない。
 components:
   securitySchemes:
     ApiKeyAuth:

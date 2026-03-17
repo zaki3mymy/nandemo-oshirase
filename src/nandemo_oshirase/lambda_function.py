@@ -6,14 +6,47 @@ import logging
 import os
 import urllib.error
 import urllib.request
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
 logger = logging.getLogger(__name__)
 _log_level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
 logger.setLevel(_log_level if isinstance(_log_level, int) else logging.INFO)
 
 
-def parse_request(event: dict[str, Any]) -> list[str]:
+class LambdaEvent(TypedDict):
+    body: NotRequired[str | None]
+    isBase64Encoded: NotRequired[bool]
+    httpMethod: NotRequired[str]
+    path: NotRequired[str]
+
+
+class LambdaResponse(TypedDict):
+    statusCode: int
+    body: str
+    headers: NotRequired[dict[str, str]]
+
+
+class LineMessage(TypedDict):
+    type: str
+    text: str
+
+
+class WebhookSource(TypedDict):
+    type: str
+    userId: NotRequired[str]
+    groupId: NotRequired[str]
+    roomId: NotRequired[str]
+
+
+class WebhookEvent(TypedDict):
+    source: NotRequired[WebhookSource]
+
+
+class WebhookBody(TypedDict):
+    events: NotRequired[list[WebhookEvent]]
+
+
+def parse_request(event: LambdaEvent) -> list[str]:
     """Parse Lambda event and extract messages."""
     body = event.get("body")
     if not body:
@@ -47,23 +80,19 @@ def validate_messages(messages: list[str]) -> list[str]:
     return validated
 
 
-def format_line_messages(messages: list[str]) -> list[dict[str, str]]:
+def format_line_messages(messages: list[str]) -> list[LineMessage]:
     """Format messages for LINE Messaging API."""
     return [{"type": "text", "text": msg} for msg in messages]
 
 
-def split_into_batches(
-    messages: list[dict[str, str]], batch_size: int = 5
-) -> list[list[dict[str, str]]]:
+def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list[list[LineMessage]]:
     """Split messages into batches."""
     if not messages:
         return []
     return [messages[i : i + batch_size] for i in range(0, len(messages), batch_size)]
 
 
-def push_messages(
-    messages: list[dict[str, str]], channel_token: str, user_id: str
-) -> dict[str, Any]:
+def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
     """Send messages to LINE Messaging API."""
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
@@ -86,7 +115,46 @@ def push_messages(
         return {"statusCode": e.code, "body": json.dumps({"error": e.reason})}
 
 
-def serve_docs() -> dict[str, Any]:
+def handle_webhook(event: LambdaEvent) -> LambdaResponse:
+    """Handle POST /webhook: log source IDs from LINE webhook events."""
+    body = event.get("body")
+    if not body:
+        logger.warning("Webhook received empty body")
+        return {"statusCode": 200, "body": json.dumps({"message": "ok"})}
+
+    if event.get("isBase64Encoded"):
+        body = base64.b64decode(body).decode("utf-8")
+
+    try:
+        data: WebhookBody = json.loads(body)
+    except json.JSONDecodeError as e:
+        logger.warning("Webhook received invalid JSON: %s", e)
+        return {"statusCode": 200, "body": json.dumps({"message": "ok"})}
+
+    for webhook_event in data.get("events", []):
+        source: WebhookSource = webhook_event.get("source", {"type": "unknown"})
+        source_type = source.get("type")
+        if source_type == "user":
+            logger.info("Webhook source: type=user userId=%s", source.get("userId"))
+        elif source_type == "group":
+            logger.info(
+                "Webhook source: type=group groupId=%s userId=%s",
+                source.get("groupId"),
+                source.get("userId"),
+            )
+        elif source_type == "room":
+            logger.info(
+                "Webhook source: type=room roomId=%s userId=%s",
+                source.get("roomId"),
+                source.get("userId"),
+            )
+        else:
+            logger.info("Webhook source: type=%s source=%s", source_type, source)
+
+    return {"statusCode": 200, "body": json.dumps({"message": "ok"})}
+
+
+def serve_docs() -> LambdaResponse:
     """Return Swagger UI HTML for GET /docs."""
     html_path = os.path.join(os.path.dirname(__file__), "docs.html")
     with open(html_path) as f:
@@ -98,7 +166,7 @@ def serve_docs() -> dict[str, Any]:
     }
 
 
-def handle_notify(event: dict[str, Any]) -> dict[str, Any]:
+def handle_notify(event: LambdaEvent) -> LambdaResponse:
     """Handle POST /notify: send messages via LINE."""
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
     if not channel_token:
@@ -151,11 +219,14 @@ def handle_notify(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+def lambda_handler(event: LambdaEvent, context: Any) -> LambdaResponse:
     """Route requests to the appropriate handler."""
     logger.info("Lambda invoked")
 
     if event.get("httpMethod") == "GET" and event.get("path") == "/docs":
         return serve_docs()
+
+    if event.get("httpMethod") == "POST" and event.get("path") == "/webhook":
+        return handle_webhook(event)
 
     return handle_notify(event)
