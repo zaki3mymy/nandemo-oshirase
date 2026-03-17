@@ -3,14 +3,14 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from nandemo_oshirase.lambda_function import push_messages
+from nandemo_oshirase.lambda_function import LineMessage, push_messages
 
 
 class TestPushMessages:
     """Test pushing messages to LINE API."""
 
     def test_push_messages_success(self):
-        messages = [{"type": "text", "text": "Hello"}]
+        messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
 
         with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
             mock_response = MagicMock()
@@ -36,7 +36,7 @@ class TestPushMessages:
             assert body["messages"] == messages
 
     def test_push_messages_multiple(self):
-        messages = [
+        messages: list[LineMessage] = [
             {"type": "text", "text": "Hello"},
             {"type": "text", "text": "World"},
         ]
@@ -59,7 +59,7 @@ class TestPushMessages:
             assert len(body["messages"]) == 2
 
     def test_push_messages_api_error(self):
-        messages = [{"type": "text", "text": "Hello"}]
+        messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
 
         with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
             from urllib.error import HTTPError
