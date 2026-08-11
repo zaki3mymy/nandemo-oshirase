@@ -47,3 +47,12 @@ uv run pytest
 # pre-commitフックのインストール
 uv run pre-commit install
 ```
+
+### ローカル環境変数の設定
+
+ローカル実行に必要な秘匿情報は `.env.local` で管理します（git 管理対象外）。
+
+```bash
+cp .env.example .env.local
+# .env.local を編集して値を設定
+```

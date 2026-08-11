@@ -53,3 +53,6 @@ src/nandemo_oshirase/docs.html
 
 # OS
 .DS_Store
+
+# Local development secrets
+.env.local

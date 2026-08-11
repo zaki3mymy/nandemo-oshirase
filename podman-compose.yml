@@ -1,0 +1,22 @@
+services:
+  stub:
+    image: mockoon/cli:latest
+    networks:
+      - local-net
+
+  lambda:
+    build:
+      context: .
+      dockerfile: Containerfile
+    networks:
+      - local-net
+    env_file:
+      - .env.local
+    environment:
+      LINE_API_BASE_URL: http://stub:3000
+    depends_on:
+      - stub
+
+networks:
+  local-net:
+    driver: bridge
