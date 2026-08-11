@@ -1,5 +1,5 @@
 name: Implement Issue
-run-name: "Implement: ${{ github.event.issue.title || format('Issue #{0}', inputs.issue_number) }}"
+run-name: "Implement: Issue #${{ inputs.issue_number }}"
 
 on:
   workflow_dispatch:
@@ -11,88 +11,7 @@ on:
 
 jobs:
   implement:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v6
-
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ secrets.CLAUDE_APP_ID }}
-          private-key: ${{ secrets.CLAUDE_APP_PRIVATE_KEY }}
-
-      - name: Get issue data
-        id: issue
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
-        run: |
-          NUMBER=$ISSUE_NUMBER
-          ISSUE_JSON=$(gh api repos/${{ github.repository }}/issues/$NUMBER 2>/dev/null) || {
-            echo "::error::Issue #$NUMBER が見つかりません"
-            exit 1
-          }
-          # pull_requestフィールドが存在する場合はPR
-          if echo "$ISSUE_JSON" | jq -e '.pull_request' &>/dev/null; then
-            echo "::error::#$NUMBER はIssueではなくPRです"
-            exit 1
-          fi
-          STATE=$(echo "$ISSUE_JSON" | jq -r '.state')
-          if [ "$STATE" = "CLOSED" ]; then
-            echo "::error::Issue #$NUMBER はすでにCloseされています"
-            exit 1
-          fi
-          TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
-          BODY=$(echo "$ISSUE_JSON" | jq -r '.body // ""')
-          BRANCH="feature/issue-${NUMBER}"
-          echo "number=$NUMBER" >> $GITHUB_OUTPUT
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          {
-            echo "body<<EOF"
-            echo "$BODY"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-      - name: Configure git
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-
-      - uses: anthropics/claude-code-action@v1
-        with:
-          github_token: ${{ steps.app-token.outputs.token }}
-          claude_args: "--allowedTools Bash,Read,Write,Edit,Glob,Grep --no-background-workers"
-          show_full_output: "true"
-          prompt: |
-            以下のGitHub Issueを実装してください。
-
-            Issue #${{ steps.issue.outputs.number }}: ${{ steps.issue.outputs.title }}
-
-            ${{ steps.issue.outputs.body }}
-
-            ## 作業手順
-
-            1. ブランチ `${{ steps.issue.outputs.branch }}` を作成して実装する（他のブランチ名は使わないこと）
-            2. コミット・プッシュする
-            3. 以下のコマンドでPRを作成する：
-               ```bash
-               gh pr create \
-                 --title "${{ steps.issue.outputs.title }}" \
-                 --body "Closes #${{ steps.issue.outputs.number }}" \
-                 --head "${{ steps.issue.outputs.branch }}" \
-                 --base main
-               ```
-            4. 以下のコマンドでレビュー依頼コメントを投稿する：
-               ```bash
-               gh pr comment ${{ steps.issue.outputs.number }} --body "@claude review このPRをレビューしてください"
-               ```
-               ※ PRの番号は `gh pr view ${{ steps.issue.outputs.branch }} --json number --jq '.number'` で取得すること
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
+    uses: zaki3mymy/actions/.github/workflows/claude-implement.yml@main
+    with:
+      issue_number: ${{ inputs.issue_number }}
+    secrets: inherit

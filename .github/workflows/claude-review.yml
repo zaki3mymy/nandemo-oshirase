@@ -7,58 +7,8 @@ on:
 
 jobs:
   review:
-    # PRへのコメントかつ @claude review を含む場合のみ実行
     if: |
       github.event.issue.pull_request != null &&
       contains(github.event.comment.body, '@claude review')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ secrets.CLAUDE_REVIEW_APP_ID }}
-          private-key: ${{ secrets.CLAUDE_REVIEW_APP_PRIVATE_KEY }}
-
-      - uses: anthropics/claude-code-action@v1
-        with:
-          github_token: ${{ steps.app-token.outputs.token }}
-          allowed_bots: "claudeapp-zaki3mymy"
-          show_full_output: "true"
-          # ClaudeReview-zaki3mymy[bot] が実行するため、claudeapp-zaki3mymy[bot] のコメントを許可
-          trigger_phrase: "@claude review"
-          claude_args: "--allowedTools Bash,Read,Glob,Grep --no-background-workers"
-          prompt: |
-            PR #${{ github.event.issue.number }} をレビューしてください。
-
-            差分を確認し、以下の観点でレビューしてください：
-            - 実装の正確さ（Issue の要件を満たしているか）
-            - コードの品質・可読性
-            - 潜在的なバグやエッジケース
-
-            ## コメントの残し方
-
-            問題を発見した場合は `gh api` を使って行コメントとサマリの両方を含むレビューをサブミットしてください：
-
-            ```bash
-            gh api repos/OWNER/REPO/pulls/PR_NUMBER/reviews \
-              --method POST \
-              --field body="## レビューサマリ\n\n全体的な所見" \
-              --field event="REQUEST_CHANGES" \
-              --field "comments[][path]=対象ファイルパス" \
-              --field "comments[][line]=行番号" \
-              --field "comments[][body]=その行への具体的な指摘"
-            ```
-
-            問題がない場合は以下でApproveしてください：
-
-            ```bash
-            gh pr review ${{ github.event.issue.number }} --approve --body "LGTM"
-            ```
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
+    uses: zaki3mymy/actions/.github/workflows/claude-review.yml@main
+    secrets: inherit
