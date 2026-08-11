@@ -64,3 +64,19 @@ cp .env.example .env.local
 ```bash
 podman-compose up --build
 ```
+
+起動後、Lambda RIE のエンドポイント（`http://localhost:9000/2015-03-31/functions/function/invocations`）経由で各エンドポイントを呼び出せます。
+
+```bash
+# POST /notify
+curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -d '{"httpMethod":"POST","path":"/notify","body":"{\"message\":\"Hello!\"}"}'
+
+# POST /webhook
+curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -d '{"httpMethod":"POST","path":"/webhook","body":"{\"events\":[]}"}'
+
+# GET /docs
+curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -d '{"httpMethod":"GET","path":"/docs"}'
+```
