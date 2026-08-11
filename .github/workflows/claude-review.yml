@@ -10,5 +10,9 @@ jobs:
     if: |
       github.event.issue.pull_request != null &&
       contains(github.event.comment.body, '@claude review')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     uses: zaki3mymy/actions/.github/workflows/claude-review.yml@main
     secrets: inherit
