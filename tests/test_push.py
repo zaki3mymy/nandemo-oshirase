@@ -1,6 +1,7 @@
 """Tests for push_messages function."""
 
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 from nandemo_oshirase.lambda_function import LineMessage, push_messages
@@ -8,6 +9,26 @@ from nandemo_oshirase.lambda_function import LineMessage, push_messages
 
 class TestPushMessages:
     """Test pushing messages to LINE API."""
+
+    def test_push_messages_uses_stub_base_url_when_set(self):
+        messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
+
+        with (
+            patch.dict(os.environ, {"LINE_API_BASE_URL": "http://stub:3000"}),
+            patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen,
+        ):
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.read.return_value = b"{}"
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
+            result = push_messages(messages, "test_token", "test_user_id")
+
+            assert result["statusCode"] == 200
+            request = mock_urlopen.call_args[0][0]
+            assert request.full_url == "http://stub:3000/v2/bot/message/push"
 
     def test_push_messages_success(self):
         messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
