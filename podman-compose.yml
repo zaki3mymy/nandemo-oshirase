@@ -1,0 +1,27 @@
+services:
+  stub:
+    image: mockoon/cli:latest
+    volumes:
+      - ./mockoon/line-api.json:/data/line-api.json:ro
+    command: ["-d", "/data/line-api.json", "-p", "3000"]
+    networks:
+      - local-net
+
+  lambda:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "8080:8080"
+    networks:
+      - local-net
+    env_file:
+      - .env.local
+    environment:
+      LINE_API_BASE_URL: http://stub:3000
+    depends_on:
+      - stub
+
+networks:
+  local-net:
+    driver: bridge

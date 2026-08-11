@@ -94,7 +94,8 @@ def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list
 
 def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
     """Send messages to LINE Messaging API."""
-    url = "https://api.line.me/v2/bot/message/push"
+    base_url = os.environ.get("LINE_API_BASE_URL", "https://api.line.me")
+    url = f"{base_url}/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {channel_token}",
