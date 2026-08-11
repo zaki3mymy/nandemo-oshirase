@@ -1,0 +1,92 @@
+name: Fix PR
+run-name: "Fix: ${{ github.event.pull_request.title }} (#${{ github.event.pull_request.number }})"
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  fix:
+    if: |
+      (github.event_name == 'pull_request_review' && github.event.review.state == 'changes_requested') ||
+      github.event_name == 'pull_request_review_comment'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.CLAUDE_APP_ID }}
+          private-key: ${{ secrets.CLAUDE_APP_PRIVATE_KEY }}
+
+      - name: Get review context
+        id: review
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request_review" ]; then
+            SUMMARY="${{ github.event.review.body }}"
+            COMMENTS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+              --jq "[.[] | select(.pull_request_review_id == ${{ github.event.review.id }}) | {path: .path, line: .line, body: .body, id: .id}]")
+          else
+            SUMMARY=""
+            COMMENTS=$(gh api repos/${{ github.repository }}/pulls/comments/${{ github.event.comment.id }} \
+              --jq "[{path: .path, line: .line, body: .body, id: .id}]")
+          fi
+          {
+            echo "summary<<EOF"
+            echo "$SUMMARY"
+            echo "EOF"
+            echo "comments<<EOF"
+            echo "$COMMENTS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Configure git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          allowed_bots: "claudereview-zaki3mymy"
+          show_full_output: "true"
+          claude_args: "--allowedTools Bash,Read,Write,Edit,Glob,Grep"
+          prompt: |
+            PR #${{ github.event.pull_request.number }} にレビューで指摘がありました。内容を修正してください。
+
+            ## レビューサマリ
+
+            ${{ steps.review.outputs.summary }}
+
+            ## 行コメント（path/line/body/idを含むJSON）
+
+            ${{ steps.review.outputs.comments }}
+
+            ## 修正後にやること
+
+            1. 修正内容をコミット・プッシュする
+            2. PRに修正サマリをコメントする：
+               ```bash
+               gh pr comment ${{ github.event.pull_request.number }} --body "## 修正内容\n\n..."
+               ```
+            3. 各行コメントに返信する（JSONの `id` フィールドを使用）：
+               ```bash
+               gh api repos/${{ github.repository }}/pulls/comments/COMMENT_ID/replies \
+                 --method POST \
+                 --field body="この指摘への対応内容"
+               ```
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
