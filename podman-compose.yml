@@ -2,10 +2,50 @@ services:
   stub:
     image: mockoon/cli:latest
     volumes:
-      - ./mockoon/line-api.json:/data/line-api.json:ro
+      - ./config/mockoon/line-api.json:/data/line-api.json:ro
     command: ["-d", "/data/line-api.json", "-p", "3000"]
     networks:
       - local-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4318:4318"
+    networks:
+      - local-net
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+    networks:
+      - local-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - local-net
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - local-net
+    depends_on:
+      - prometheus
 
   lambda:
     build:
@@ -19,8 +59,16 @@ services:
       - .env.local
     environment:
       LINE_API_BASE_URL: http://stub:3000
+      AWS_LAMBDA_EXEC_WRAPPER: /var/lang/bin/opentelemetry-instrument
+      OTEL_SERVICE_NAME: nandemo-oshirase
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: DELTA
     depends_on:
       - stub
+      - otel-collector
 
 networks:
   local-net:

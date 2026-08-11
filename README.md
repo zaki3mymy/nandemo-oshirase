@@ -59,7 +59,7 @@ cp .env.example .env.local
 
 ### コンテナでの動作確認
 
-`podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
+`podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）、OTelのテレメトリ収集・可視化スタック（otel-collector / Jaeger / Prometheus / Grafana）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
 
 ```bash
 podman-compose up --build
@@ -80,3 +80,15 @@ curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
 curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
   -d '{"httpMethod":"GET","path":"/docs"}'
 ```
+
+### OTelメトリクス・トレースの確認
+
+lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrument` 経由で起動され、OTLP/HTTPでotel-collectorにテレメトリを送信します。上記のリクエストを送った後、以下のUIで確認できます。
+
+| ツール | URL | 用途 |
+|--------|-----|------|
+| Jaeger | http://localhost:16686 | トレースの可視化 |
+| Grafana | http://localhost:3000 | メトリクスダッシュボード（Prometheusデータソースは自動プロビジョニング済み、初回ログインは `admin` / `admin`） |
+| Prometheus | http://localhost:9090 | メトリクスの生データ確認 |
+
+ローカル用のCollector/Prometheus設定は `config/` ディレクトリにまとめています（`config/otel-collector-config.yaml`、`config/prometheus.yml`、`config/grafana/`）。
