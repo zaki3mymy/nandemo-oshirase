@@ -1,6 +1,9 @@
 services:
   stub:
     image: mockoon/cli:latest
+    volumes:
+      - ./mockoon/line-api.json:/data/line-api.json:ro
+    command: ["-d", "/data/line-api.json", "-p", "3000"]
     networks:
       - local-net
 

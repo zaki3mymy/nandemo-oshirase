@@ -56,3 +56,11 @@ uv run pre-commit install
 cp .env.example .env.local
 # .env.local を編集して値を設定
 ```
+
+### コンテナでの動作確認
+
+`podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
+
+```bash
+podman-compose up --build
+```
