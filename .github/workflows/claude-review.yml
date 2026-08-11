@@ -32,7 +32,7 @@ jobs:
           show_full_output: "true"
           # ClaudeReview-zaki3mymy[bot] が実行するため、claudeapp-zaki3mymy[bot] のコメントを許可
           trigger_phrase: "@claude review"
-          claude_args: "--allowedTools Bash,Read,Glob,Grep"
+          claude_args: "--allowedTools Bash,Read,Glob,Grep --no-background-workers"
           prompt: |
             PR #${{ github.event.issue.number }} をレビューしてください。
 

@@ -63,7 +63,7 @@ jobs:
           github_token: ${{ steps.app-token.outputs.token }}
           allowed_bots: "claudereview-zaki3mymy"
           show_full_output: "true"
-          claude_args: "--allowedTools Bash,Read,Write,Edit,Glob,Grep"
+          claude_args: "--allowedTools Bash,Read,Write,Edit,Glob,Grep --no-background-workers"
           prompt: |
             PR #${{ github.event.pull_request.number }} にレビューで指摘がありました。内容を修正してください。
 
