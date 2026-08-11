@@ -11,6 +11,10 @@ on:
 
 jobs:
   implement:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     uses: zaki3mymy/actions/.github/workflows/claude-implement.yml@main
     with:
       issue_number: ${{ inputs.issue_number }}
