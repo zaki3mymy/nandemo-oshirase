@@ -57,6 +57,14 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+    entrypoint:
+      - /usr/local/bin/aws-lambda-rie
+    command:
+      - opentelemetry-instrument
+      - python
+      - -m
+      - awslambdaric
+      - nandemo_oshirase.lambda_function.lambda_handler
     ports:
       - "9000:8080"
     networks:
@@ -65,7 +73,6 @@ services:
       - .env.local
     environment:
       LINE_API_BASE_URL: http://stub:3000
-      AWS_LAMBDA_EXEC_WRAPPER: /var/lang/bin/opentelemetry-instrument
       OTEL_SERVICE_NAME: nandemo-oshirase
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
