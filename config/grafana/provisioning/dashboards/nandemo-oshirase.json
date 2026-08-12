@@ -1,0 +1,68 @@
+{
+  "title": "nandemo-oshirase",
+  "uid": "nandemo-oshirase",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP リクエスト数",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(http_client_duration_milliseconds_count[1m])",
+          "legendFormat": "リクエスト数/分"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP レスポンスタイム（P50 / P95 / P99）",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, rate(http_client_duration_milliseconds_bucket[1m]))",
+          "legendFormat": "P50"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(http_client_duration_milliseconds_bucket[1m]))",
+          "legendFormat": "P95"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, rate(http_client_duration_milliseconds_bucket[1m]))",
+          "legendFormat": "P99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "トレース一覧",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 12 },
+      "datasource": { "type": "jaeger", "uid": "jaeger" },
+      "targets": [
+        {
+          "datasource": { "type": "jaeger", "uid": "jaeger" },
+          "queryType": "search",
+          "service": "nandemo-oshirase",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "sortBy": [{ "displayName": "Start time", "desc": true }]
+      }
+    }
+  ]
+}
