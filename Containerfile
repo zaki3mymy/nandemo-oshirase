@@ -6,6 +6,10 @@ RUN npx --yes @redocly/cli build-docs openapi.yaml --output docs.html
 
 FROM public.ecr.aws/lambda/python:3.13
 
+COPY pyproject.toml .
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache -r pyproject.toml
+
 COPY src/nandemo_oshirase/ ${LAMBDA_TASK_ROOT}/nandemo_oshirase/
 COPY --from=docs-builder /docs/docs.html ${LAMBDA_TASK_ROOT}/nandemo_oshirase/docs.html
 
