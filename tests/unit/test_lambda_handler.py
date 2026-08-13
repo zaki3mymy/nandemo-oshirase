@@ -153,7 +153,7 @@ class TestLambdaHandlerInvalidRequest:
 class TestLambdaHandlerDocs:
     """Test GET /docs endpoint."""
 
-    docs_html = Path(__file__).parent.parent / "src" / "nandemo_oshirase" / "docs.html"
+    docs_html = Path(__file__).parent.parent.parent / "src" / "nandemo_oshirase" / "docs.html"
 
     def setup_method(self):
         self.docs_html.write_text("<!DOCTYPE html><html><body>openapi</body></html>")

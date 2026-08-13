@@ -92,3 +92,12 @@ lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrum
 | Prometheus | http://localhost:9090 | メトリクスの生データ確認 |
 
 ローカル用のCollector/Prometheus設定は `config/` ディレクトリにまとめています（`config/otel-collector-config.yaml`、`config/prometheus.yml`、`config/grafana/`）。
+
+### 結合テスト
+
+`tests/integration/` には、手動計装したトレース・メトリクスが実際にJaeger・Prometheusまで届いていることを確認する結合テストがあります。`uv run pytest` の対象には含まれず、`podman-compose up -d` でスタック一式を起動した状態で明示的に実行します。
+
+```bash
+podman-compose up -d
+uv run pytest tests/integration/
+```

@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/unit"]
 pythonpath = ["src"]
 addopts = "--cov=nandemo_oshirase --cov-report=term-missing --cov-fail-under=100"
 
