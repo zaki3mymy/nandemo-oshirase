@@ -111,7 +111,8 @@ def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list
 @_tracer.start_as_current_span("push_messages")
 def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
     """Send messages to LINE Messaging API."""
-    trace.get_current_span().set_attribute("line.message_count", len(messages))
+    # このバッチ（最大 batch_size 件）に含まれるメッセージ数。リクエスト全体の総数ではない。
+    trace.get_current_span().set_attribute("line.batch_message_count", len(messages))
 
     base_url = os.environ.get("LINE_API_BASE_URL", "https://api.line.me")
     url = f"{base_url}/v2/bot/message/push"
@@ -135,6 +136,10 @@ def push_messages(messages: list[LineMessage], channel_token: str, user_id: str)
         logger.error("LINE API error: status=%d reason=%s", e.code, e.reason)
         _notification_counter.add(len(messages), {"status": "error"})
         return {"statusCode": e.code, "body": json.dumps({"error": e.reason})}
+    except urllib.error.URLError as e:
+        logger.error("LINE API connection error: %s", e.reason)
+        _notification_counter.add(len(messages), {"status": "error"})
+        return {"statusCode": 502, "body": json.dumps({"error": str(e.reason)})}
 
 
 @_tracer.start_as_current_span("handle_webhook")
