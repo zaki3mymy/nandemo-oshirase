@@ -16,6 +16,38 @@
       "endpoint": "v2/bot/message/push",
       "responses": [
         {
+          "uuid": "8f2b6a8e-6c7d-4b8a-9e2f-1a2b3c4d5e6f",
+          "body": "{\"message\": \"simulated error\"}",
+          "latency": 0,
+          "statusCode": 500,
+          "label": "Simulated error when request body contains __error__",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [
+            {
+              "target": "body",
+              "modifier": "",
+              "value": ".*__error__.*",
+              "invert": false,
+              "operator": "regex"
+            }
+          ],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
           "uuid": "3089075d-3f1c-457c-ae8e-b7759ad6ccd2",
           "body": "{}",
           "latency": 0,

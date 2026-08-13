@@ -17,6 +17,7 @@ services:
       - ./config/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
       - "4318:4318"
+      - "13133:13133"
     networks:
       - local-net
     depends_on:
