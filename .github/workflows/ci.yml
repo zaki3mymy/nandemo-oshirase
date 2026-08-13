@@ -1,17 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "tf/**"
-      - "openapi.yaml"
-      - "pyproject.toml"
-      - ".pre-commit-config.yaml"
-      - ".python-version"
-      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main, develop]
     paths:
@@ -23,6 +12,7 @@ on:
       - ".pre-commit-config.yaml"
       - ".python-version"
       - ".github/workflows/ci.yml"
+  workflow_call:
 
 jobs:
   pre-commit:
