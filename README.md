@@ -17,6 +17,17 @@ mainブランチへのマージ時にGitHub Actionsで自動デプロイされ�
 | `LINE_CHANNEL_TOKEN` | LINE Messaging API Channel Access Token |
 | `LINE_USER_ID` | 通知先のLINE User ID |
 
+### 本番環境のOTelテレメトリ
+
+本番Lambdaには OTel の Python計装レイヤーと Collectorレイヤーをアタッチしており、認証はLambda実行ロールのIAM権限（`AWSXRayDaemonWriteAccess` / `CloudWatchAgentServerPolicy`）で行います。追加のシークレット設定は不要です。
+
+トレース・メトリクスの転送先とCollectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
+
+| テレメトリ | バックエンド | 確認方法 |
+|---|---|---|
+| トレース | AWS X-Ray | X-Ray コンソール / CloudWatch ServiceLens |
+| メトリクス | Amazon CloudWatch (EMF) | CloudWatch メトリクス（namespace: `NandemoOshirase`） |
+
 ## 使い方
 
 ```bash
