@@ -182,11 +182,13 @@ def handle_webhook(event: LambdaEvent) -> LambdaResponse:
     return {"statusCode": 200, "body": json.dumps({"message": "ok"})}
 
 
+@_tracer.start_as_current_span("serve_docs")
 def serve_docs() -> LambdaResponse:
     """Return Swagger UI HTML for GET /docs."""
     html_path = os.path.join(os.path.dirname(__file__), "docs.html")
-    with open(html_path) as f:
-        html = f.read()
+    with _tracer.start_as_current_span("open_file"):
+        with open(html_path) as f:
+            html = f.read()
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "text/html"},
