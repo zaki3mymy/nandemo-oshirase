@@ -7,6 +7,8 @@ services:
     command: ["-d", "/data/line-api.json", "-p", "3000"]
     networks:
       - local-net
+    # デフォルトではSIGTERMを受け取らないので終了時にSIGTERMを受け取るようにする
+    stop_signal: SIGKILL
 
   otel-collector:
     # otel/opentelemetry-collector-contrib:0.158.0
