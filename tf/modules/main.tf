@@ -51,13 +51,15 @@ resource "aws_lambda_function" "notify" {
   runtime          = "python3.13"
   timeout          = 30
 
-  # OTel Lambdaレイヤー: Python計装レイヤー + OTel Collectorレイヤー
-  # バージョンはリリースページ（https://github.com/open-telemetry/opentelemetry-lambda/releases）で
-  # ap-northeast-1 向けの最新版を確認のうえ、必要に応じて更新すること
+  # OTel Lambdaレイヤー: Python計装レイヤー（コミュニティ製） + ADOTコレクターレイヤー（AWS公式）
+  # Python計装レイヤーのバージョンはhttps://github.com/open-telemetry/opentelemetry-lambda/releases で確認
+  # ADOTコレクターレイヤーのバージョンはhttps://aws-otel.github.io/docs/getting-started/lambda で確認
+  # awsxray/awsemfエクスポーターを使う場合はADOTコレクターレイヤー（901920570463）が必要
+  # コミュニティ製コレクターレイヤー（184161586896）にはAWS固有エクスポーターが含まれていない
   # AWS_LAMBDA_EXEC_WRAPPER（下記environment）でPython計装レイヤーがlambda_handlerをラップする
   layers = [
     "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_21_0:1",
-    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-collector-amd64-0_23_0:1",
+    "arn:aws:lambda:ap-northeast-1:901920570463:layer:aws-otel-collector-amd64-ver-0-117-0:1",
   ]
 
   tracing_config {
