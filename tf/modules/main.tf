@@ -1,11 +1,26 @@
 locals {
-  name_prefix = "${var.stage_name}-${var.project_name}"
+  name_prefix     = "${var.stage_name}-${var.project_name}"
+  lambda_code_dir = "${path.module}/../../src/nandemo_oshirase"
 }
 
+# archive_fileの`source_dir`と`source`は同時指定できないため、
+# `source_dir`配下のファイルを`fileset`で列挙し、collector.yamlと合わせて`source`で1つのzipにまとめる
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../../src/nandemo_oshirase"
   output_path = "${path.module}/lambda.zip"
+
+  dynamic "source" {
+    for_each = fileset(local.lambda_code_dir, "**")
+    content {
+      content  = file("${local.lambda_code_dir}/${source.value}")
+      filename = source.value
+    }
+  }
+
+  source {
+    content  = file("${path.module}/../../collector.yaml")
+    filename = "collector.yaml"
+  }
 }
 
 # IAM Role for Lambda
@@ -31,6 +46,16 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_xray" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_cloudwatch_metrics" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 # Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
@@ -41,11 +66,30 @@ resource "aws_lambda_function" "notify" {
   runtime          = "python3.13"
   timeout          = 30
 
+  # OTel Lambdaレイヤー: Python計装レイヤー + OTel Collectorレイヤー
+  # バージョンはリリースページ（https://github.com/open-telemetry/opentelemetry-lambda/releases）で
+  # ap-northeast-1 向けの最新版を確認のうえ、必要に応じて更新すること
+  # AWS_LAMBDA_EXEC_WRAPPER（下記environment）でPython計装レイヤーがlambda_handlerをラップする
+  layers = [
+    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_21_0:1",
+    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-collector-amd64-0_23_0:1",
+  ]
+
+  tracing_config {
+    mode = "Active"
+  }
+
   environment {
     variables = {
-      LINE_CHANNEL_TOKEN = var.line_channel_token
-      LINE_USER_ID       = var.line_user_id
-      LOG_LEVEL          = var.log_level
+      LINE_CHANNEL_TOKEN                                = var.line_channel_token
+      LINE_USER_ID                                      = var.line_user_id
+      LOG_LEVEL                                         = var.log_level
+      AWS_LAMBDA_EXEC_WRAPPER                           = "/opt/python/otel-handler"
+      OPENTELEMETRY_COLLECTOR_CONFIG_URI                = "/var/task/collector.yaml"
+      OTEL_SERVICE_NAME                                 = "nandemo-oshirase"
+      OTEL_TRACES_EXPORTER                              = "otlp"
+      OTEL_METRICS_EXPORTER                             = "otlp"
+      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "DELTA"
     }
   }
 }
