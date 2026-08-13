@@ -85,3 +85,34 @@ def test_metrics_recorded_in_prometheus():
 def test_error_metrics_recorded_in_prometheus():
     _invoke_lambda(["__error__"])
     assert _wait_for_prometheus('line_notifications_sent_total{status="error"}')
+
+
+def test_trace_linked_from_external_caller():
+    # 外部アプリからの呼び出しをシミュレート: traceparent をイベントの headers に注入する
+    trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+    traceparent = f"00-{trace_id}-00f067aa0ba902b7-01"
+
+    body = json.dumps(
+        {
+            "httpMethod": "POST",
+            "path": "/notify",
+            "headers": {"traceparent": traceparent},
+            "body": json.dumps({"messages": ["分散トレーシング結合テスト"]}),
+            "queryStringParameters": None,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        LAMBDA_URL, data=body, headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as res:
+        assert res.status == 200
+
+    time.sleep(3)
+
+    with urllib.request.urlopen(f"{JAEGER_URL}/api/traces/{trace_id}", timeout=5) as res:
+        data = json.loads(res.read())
+
+    assert len(data["data"]) > 0, "trace_id が Jaeger に記録されていない"
+    processes = data["data"][0]["processes"]
+    service_names = [p["serviceName"] for p in processes.values()]
+    assert "nandemo-oshirase" in service_names
