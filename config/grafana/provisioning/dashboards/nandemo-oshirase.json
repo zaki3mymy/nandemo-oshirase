@@ -14,7 +14,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(http_client_duration_milliseconds_count[1m])",
+          "expr": "sum_over_time(http_client_duration_milliseconds_count[1m])",
           "legendFormat": "リクエスト数/分"
         }
       ]
