@@ -84,7 +84,7 @@ resource "aws_lambda_function" "notify" {
       LINE_CHANNEL_TOKEN                                = var.line_channel_token
       LINE_USER_ID                                      = var.line_user_id
       LOG_LEVEL                                         = var.log_level
-      AWS_LAMBDA_EXEC_WRAPPER                           = "/opt/python/otel-handler"
+      AWS_LAMBDA_EXEC_WRAPPER                           = "/opt/otel-handler"
       OPENTELEMETRY_COLLECTOR_CONFIG_URI                = "/var/task/collector.yaml"
       OTEL_SERVICE_NAME                                 = "nandemo-oshirase"
       OTEL_TRACES_EXPORTER                              = "otlp"
