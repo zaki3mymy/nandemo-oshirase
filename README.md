@@ -21,7 +21,7 @@ mainブランチへのマージ時にGitHub Actionsで自動デプロイされ�
 
 本番Lambdaには OTel の Python計装レイヤーと Collectorレイヤーをアタッチしており、認証はLambda実行ロールのIAM権限（`AWSXRayDaemonWriteAccess` / `CloudWatchAgentServerPolicy`）で行います。追加のシークレット設定は不要です。
 
-トレース・メトリクスの転送先とCollectorの設定は `collector.yaml`（リポジトリルート）にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
+トレース・メトリクスの転送先とCollectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
 
 | テレメトリ | バックエンド | 確認方法 |
 |---|---|---|

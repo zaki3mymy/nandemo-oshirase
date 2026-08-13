@@ -1,26 +1,11 @@
 locals {
-  name_prefix     = "${var.stage_name}-${var.project_name}"
-  lambda_code_dir = "${path.module}/../../src/nandemo_oshirase"
+  name_prefix = "${var.stage_name}-${var.project_name}"
 }
 
-# archive_fileの`source_dir`と`source`は同時指定できないため、
-# `source_dir`配下のファイルを`fileset`で列挙し、collector.yamlと合わせて`source`で1つのzipにまとめる
 data "archive_file" "lambda_zip" {
   type        = "zip"
+  source_dir  = "${path.module}/../../src/nandemo_oshirase"
   output_path = "${path.module}/lambda.zip"
-
-  dynamic "source" {
-    for_each = fileset(local.lambda_code_dir, "**")
-    content {
-      content  = file("${local.lambda_code_dir}/${source.value}")
-      filename = source.value
-    }
-  }
-
-  source {
-    content  = file("${path.module}/../../collector.yaml")
-    filename = "collector.yaml"
-  }
 }
 
 # IAM Role for Lambda
