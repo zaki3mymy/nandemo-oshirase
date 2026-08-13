@@ -49,6 +49,7 @@ services:
     image: grafana/grafana@sha256:ab5cb380e3ff3172d6c8bd2e7cfd31cce977d2881b260e1f5bc089bf0b759b43
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"
     networks:
@@ -89,3 +90,6 @@ services:
 networks:
   local-net:
     driver: bridge
+
+volumes:
+  grafana-data:
