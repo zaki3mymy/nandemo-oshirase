@@ -8,9 +8,25 @@ import urllib.error
 import urllib.request
 from typing import Any, NotRequired, TypedDict
 
+from opentelemetry import metrics, trace
+
 logger = logging.getLogger(__name__)
 _log_level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
 logger.setLevel(_log_level if isinstance(_log_level, int) else logging.INFO)
+
+_tracer = trace.get_tracer("nandemo_oshirase")
+_meter = metrics.get_meter("nandemo_oshirase")
+
+_notification_counter = _meter.create_counter(
+    "line.notifications.sent",
+    unit="1",
+    description="Number of LINE notifications sent",
+)
+_batch_count_histogram = _meter.create_histogram(
+    "line.messages.batch_count",
+    unit="1",
+    description="Number of batches per request",
+)
 
 
 class LambdaEvent(TypedDict):
@@ -92,8 +108,12 @@ def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list
     return [messages[i : i + batch_size] for i in range(0, len(messages), batch_size)]
 
 
+@_tracer.start_as_current_span("push_messages")
 def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
     """Send messages to LINE Messaging API."""
+    # このバッチ（最大 batch_size 件）に含まれるメッセージ数。リクエスト全体の総数ではない。
+    trace.get_current_span().set_attribute("line.batch_message_count", len(messages))
+
     base_url = os.environ.get("LINE_API_BASE_URL", "https://api.line.me")
     url = f"{base_url}/v2/bot/message/push"
     headers = {
@@ -110,12 +130,19 @@ def push_messages(messages: list[LineMessage], channel_token: str, user_id: str)
             status = response.status
             response_body = response.read().decode("utf-8")
             logger.info("LINE API responded with status %d", status)
+            _notification_counter.add(len(messages), {"status": "success"})
             return {"statusCode": status, "body": response_body}
     except urllib.error.HTTPError as e:
         logger.error("LINE API error: status=%d reason=%s", e.code, e.reason)
+        _notification_counter.add(len(messages), {"status": "error"})
         return {"statusCode": e.code, "body": json.dumps({"error": e.reason})}
+    except urllib.error.URLError as e:
+        logger.error("LINE API connection error: %s", e.reason)
+        _notification_counter.add(len(messages), {"status": "error"})
+        return {"statusCode": 502, "body": json.dumps({"error": str(e.reason)})}
 
 
+@_tracer.start_as_current_span("handle_webhook")
 def handle_webhook(event: LambdaEvent) -> LambdaResponse:
     """Handle POST /webhook: log source IDs from LINE webhook events."""
     body = event.get("body")
@@ -155,11 +182,13 @@ def handle_webhook(event: LambdaEvent) -> LambdaResponse:
     return {"statusCode": 200, "body": json.dumps({"message": "ok"})}
 
 
+@_tracer.start_as_current_span("serve_docs")
 def serve_docs() -> LambdaResponse:
     """Return Swagger UI HTML for GET /docs."""
     html_path = os.path.join(os.path.dirname(__file__), "docs.html")
-    with open(html_path) as f:
-        html = f.read()
+    with _tracer.start_as_current_span("open_file"):
+        with open(html_path) as f:
+            html = f.read()
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "text/html"},
@@ -167,6 +196,7 @@ def serve_docs() -> LambdaResponse:
     }
 
 
+@_tracer.start_as_current_span("handle_notify")
 def handle_notify(event: LambdaEvent) -> LambdaResponse:
     """Handle POST /notify: send messages via LINE."""
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
@@ -204,6 +234,8 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
 
     formatted = format_line_messages(messages)
     batches = split_into_batches(formatted)
+    trace.get_current_span().set_attribute("line.batch_count", len(batches))
+    _batch_count_histogram.record(len(batches))
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
     for i, batch in enumerate(batches, start=1):

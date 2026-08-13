@@ -97,3 +97,16 @@ class TestPushMessages:
 
             expected = {"statusCode": 400, "body": json.dumps({"error": "Bad Request"})}
             assert result == expected
+
+    def test_push_messages_connection_error(self):
+        messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
+
+        with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
+            from urllib.error import URLError
+
+            mock_urlopen.side_effect = URLError("Connection refused")
+
+            result = push_messages(messages, "test_token", "test_user_id")
+
+            expected = {"statusCode": 502, "body": json.dumps({"error": "Connection refused"})}
+            assert result == expected
