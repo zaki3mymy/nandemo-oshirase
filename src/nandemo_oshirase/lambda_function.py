@@ -6,7 +6,7 @@ import logging
 import os
 import urllib.error
 import urllib.request
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict, TypeIs
 
 from opentelemetry import metrics, trace
 
@@ -36,6 +36,14 @@ class LambdaEvent(TypedDict):
     path: NotRequired[str]
 
 
+class ScheduledEvent(TypedDict):
+    """Event sent by EventBridge Scheduler via direct Lambda invocation."""
+
+    source: str
+    messages: list[str]
+    schedule_arn: NotRequired[str]
+
+
 class LambdaResponse(TypedDict):
     statusCode: int
     body: str
@@ -45,6 +53,17 @@ class LambdaResponse(TypedDict):
 class LineMessage(TypedDict):
     type: str
     text: str
+
+
+SCHEDULER_EVENT_SOURCE = "nandemo-oshirase.scheduler"
+
+
+class ScheduledNotificationError(Exception):
+    """Raised when a scheduled notification cannot be delivered.
+
+    Scheduled invocations are asynchronous, so the return value is discarded.
+    Raising makes the failure visible to Lambda (retry / Errors metric).
+    """
 
 
 class WebhookSource(TypedDict):
@@ -196,9 +215,8 @@ def serve_docs() -> LambdaResponse:
     }
 
 
-@_tracer.start_as_current_span("handle_notify")
-def handle_notify(event: LambdaEvent) -> LambdaResponse:
-    """Handle POST /notify: send messages via LINE."""
+def load_line_credentials() -> tuple[str, str] | LambdaResponse:
+    """Read LINE credentials from env vars, or return an error response if missing."""
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
     if not channel_token:
         logger.error("LINE_CHANNEL_TOKEN is not set")
@@ -215,15 +233,11 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
             "body": json.dumps({"error": "LINE_USER_ID environment variable not set"}),
         }
 
-    try:
-        raw_messages = parse_request(event)
-    except ValueError as e:
-        logger.warning("Failed to parse request: %s", e)
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": str(e)}),
-        }
+    return channel_token, user_id
 
+
+def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) -> LambdaResponse:
+    """Validate, format, batch and push messages to LINE."""
     messages = validate_messages(raw_messages)
     if not messages:
         logger.warning("No valid messages after validation")
@@ -252,9 +266,64 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
     }
 
 
-def lambda_handler(event: LambdaEvent, context: Any) -> LambdaResponse:
+@_tracer.start_as_current_span("handle_notify")
+def handle_notify(event: LambdaEvent) -> LambdaResponse:
+    """Handle POST /notify: send messages via LINE."""
+    credentials = load_line_credentials()
+    if isinstance(credentials, dict):
+        return credentials
+    channel_token, user_id = credentials
+
+    try:
+        raw_messages = parse_request(event)
+    except ValueError as e:
+        logger.warning("Failed to parse request: %s", e)
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": str(e)}),
+        }
+
+    return deliver_messages(raw_messages, channel_token, user_id)
+
+
+@_tracer.start_as_current_span("handle_scheduled")
+def handle_scheduled(event: ScheduledEvent) -> LambdaResponse:
+    """Handle a direct invocation from EventBridge Scheduler.
+
+    Raises ScheduledNotificationError on failure so that the asynchronous
+    invocation is recorded as an error (and retried by Lambda).
+    """
+    schedule_arn = event.get("schedule_arn")
+    if schedule_arn:
+        trace.get_current_span().set_attribute("scheduler.schedule_arn", schedule_arn)
+    logger.info("Scheduled invocation (schedule_arn=%s)", schedule_arn)
+
+    credentials = load_line_credentials()
+    if isinstance(credentials, dict):
+        raise ScheduledNotificationError(credentials["body"])
+    channel_token, user_id = credentials
+
+    raw_messages = event.get("messages")
+    if not isinstance(raw_messages, list) or not all(isinstance(m, str) for m in raw_messages):
+        raise ScheduledNotificationError("Scheduled event must have 'messages' as a list of str")
+
+    result = deliver_messages(raw_messages, channel_token, user_id)
+    if result["statusCode"] != 200:
+        raise ScheduledNotificationError(result["body"])
+    return result
+
+
+def is_scheduled_event(event: LambdaEvent | ScheduledEvent) -> TypeIs[ScheduledEvent]:
+    """Return True if the event was sent by EventBridge Scheduler."""
+    return event.get("source") == SCHEDULER_EVENT_SOURCE
+
+
+def lambda_handler(event: LambdaEvent | ScheduledEvent, context: Any) -> LambdaResponse:
     """Route requests to the appropriate handler."""
     logger.info("Lambda invoked")
+
+    if is_scheduled_event(event):
+        return handle_scheduled(event)
 
     if event.get("httpMethod") == "GET" and event.get("path") == "/docs":
         return serve_docs()
