@@ -3,9 +3,6 @@
 # Terraformで管理するのは「入れ物」（スケジュールグループ・IAMロール）だけで、
 # 個々のスケジュール（送信時刻・メッセージ）は `oshirase` CLI でAWS上に直接作成する。
 # そのため、送信時刻やメッセージはリポジトリにもTerraform stateにも残らない。
-#
-# NOTE: API Gatewayのdeploymentは main.tf の filemd5 で再デプロイ判定しているため、
-# API Gatewayと無関係なリソースはこのファイルに分けて置いている。
 
 data "aws_caller_identity" "current" {}
 
