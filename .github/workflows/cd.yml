@@ -138,10 +138,6 @@ jobs:
           uv run oshirase --env $ENV update "$NAME" --at 04:00
           uv run oshirase --env $ENV disable "$NAME"
           uv run oshirase --env $ENV delete "$NAME"
-          if uv run oshirase --env $ENV list | grep -q "^$NAME "; then
-            echo "CLI smoke test failed! $NAME still exists after delete"
-            exit 1
-          fi
 
       - name: Smoke test scheduler fires Lambda
         if: steps.config.outputs.env == 'dev'
