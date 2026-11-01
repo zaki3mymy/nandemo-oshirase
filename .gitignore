@@ -53,3 +53,6 @@ src/nandemo_oshirase/docs.html
 
 # Local development secrets
 .env.local
+
+# Hypothesis
+.hypothesis/
