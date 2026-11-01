@@ -36,9 +36,11 @@ jobs:
         id: config
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
           else
+            echo "env=dev" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
           fi
@@ -83,6 +85,7 @@ jobs:
             -auto-approve
 
       - name: Test POST /notify
+        if: steps.config.outputs.env == 'dev'
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
@@ -100,6 +103,90 @@ jobs:
             echo "POST /notify test failed!"
             exit 1
           fi
+
+      # 空メッセージは Lambda の検証で除かれるため LINE への push は発生せず、
+      # API キー・API Gateway・Lambda までの疎通だけを確認できる
+      - name: Test POST /notify (without sending to LINE)
+        if: steps.config.outputs.env == 'prod'
+        run: |
+          API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
+          API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
+
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST "$API_ENDPOINT" \
+            -H "x-api-key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"messages": [""]}')
+
+          echo "Status: $HTTP_STATUS"
+          cat response.json
+
+          if [ "$HTTP_STATUS" = "400" ] && grep -q "No valid messages to send" response.json; then
+            echo "POST /notify test passed!"
+          else
+            echo "POST /notify test failed!"
+            exit 1
+          fi
+
+      - name: Smoke test oshirase CLI
+        env:
+          ENV: ${{ steps.config.outputs.env }}
+        run: |
+          NAME="ci-${{ github.run_id }}"
+          uv run oshirase --env $ENV add "$NAME" --weekly sun --at 03:00 -m "CI smoke test"
+          uv run oshirase --env $ENV show "$NAME"
+          uv run oshirase --env $ENV update "$NAME" --at 04:00
+          uv run oshirase --env $ENV disable "$NAME"
+
+      - name: Smoke test scheduler fires Lambda
+        if: steps.config.outputs.env == 'dev'
+        run: |
+          NAME="ci-fire-${{ github.run_id }}"
+          START_MS=$(( $(date +%s) * 1000 ))
+          read MIN HOUR DAY MONTH YEAR <<< "$(TZ=Asia/Tokyo date -d '+2 min' '+%M %H %d %m %Y')"
+          uv run oshirase --env dev add "$NAME" \
+            --cron "$((10#$MIN)) $((10#$HOUR)) $((10#$DAY)) $((10#$MONTH)) ? $YEAR" \
+            -m "CI smoke test: scheduler fired (${{ github.sha }})"
+
+          LOG_GROUP="/aws/lambda/dev-nandemo-oshirase-function"
+          REQUEST_ID=""
+          DEADLINE=$(( $(date +%s) + 240 ))
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            if [ -z "$REQUEST_ID" ]; then
+              # Lambda のテキストログは "[INFO]<TAB>時刻<TAB>リクエストID<TAB>本文" の形式
+              REQUEST_ID=$(aws logs filter-log-events \
+                --log-group-name "$LOG_GROUP" \
+                --start-time "$START_MS" \
+                --filter-pattern '"Scheduled invocation" "schedule/dev-nandemo-oshirase-reminders/'"$NAME"'"' \
+                --query 'events[0].message' --output text \
+                | awk -F'\t' 'NF>=4 && $1 != "None" {print $3; exit}')
+              [ -n "$REQUEST_ID" ] && echo "Scheduler invoked Lambda (request id: $REQUEST_ID)"
+            fi
+            if [ -n "$REQUEST_ID" ]; then
+              COUNT=$(aws logs filter-log-events \
+                --log-group-name "$LOG_GROUP" \
+                --start-time "$START_MS" \
+                --filter-pattern '"'"$REQUEST_ID"'" "All messages sent successfully"' \
+                --query 'length(events)' --output text)
+              if [ "$COUNT" != "0" ]; then
+                echo "Scheduler fire test passed!"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+
+          echo "Scheduler fire test failed! (request id: ${REQUEST_ID:-not found})"
+          exit 1
+
+      - name: Cleanup oshirase CLI smoke test
+        if: always()
+        env:
+          ENV: ${{ steps.config.outputs.env }}
+        run: uv run oshirase --env $ENV delete "ci-${{ github.run_id }}" || true
+
+      - name: Cleanup scheduler fire test
+        if: always() && steps.config.outputs.env == 'dev'
+        run: uv run oshirase --env dev delete "ci-fire-${{ github.run_id }}" || true
 
       - name: Test GET /docs
         run: |
