@@ -422,4 +422,3 @@ class TestBotoCoreError:
 
         assert main(["list"], stubs.service) == 1
         assert "認証情報" in capsys.readouterr().err
-
