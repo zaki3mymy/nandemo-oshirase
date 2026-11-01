@@ -10,13 +10,19 @@ dependencies = [
     "opentelemetry-instrumentation-urllib",
 ]
 
+[project.scripts]
+oshirase = "oshirase_cli.main:main"
+
+[tool.uv]
+default-groups = ["dev", "cli"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 pythonpath = ["src"]
-addopts = "--cov=nandemo_oshirase --cov-report=term-missing --cov-fail-under=100"
+addopts = "--cov=nandemo_oshirase --cov=oshirase_cli --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.run]
-source = ["src/nandemo_oshirase"]
+source = ["src/nandemo_oshirase", "src/oshirase_cli"]
 branch = true
 
 [tool.coverage.report]
@@ -37,7 +43,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [dependency-groups]
+cli = [
+    "boto3>=1.43.123",
+]
 dev = [
+    "hypothesis>=6.170.14",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",

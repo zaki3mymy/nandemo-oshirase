@@ -46,6 +46,59 @@ curl -X POST <ENDPOINT> \
   -d '{"messages": ["1つ目", "2つ目", "3つ目"]}'
 ```
 
+## 定時お知らせ（`oshirase` CLI）
+
+「毎週月曜21時に『明日は燃えるゴミです』」のような定時のお知らせを、EventBridge Scheduler から Lambda を直接 invoke して送ります。
+
+送信時刻とメッセージは AWS 上の EventBridge Scheduler にだけ保存され、このリポジトリや Terraform state には残りません。Terraform が管理するのはスケジュールグループ（`{env}-nandemo-oshirase-reminders`）と Scheduler 用 IAM ロールだけです。
+
+```bash
+# 追加
+uv run oshirase add gomi-moeru --weekly mon --at 21:00 -m "明日は燃えるゴミです"
+uv run oshirase add shigen --weekly wed --nth 2 --at 21:00 -m "明日は資源ごみです"  # 毎月第2水曜
+uv run oshirase add morning --daily --at 7:00 -m "おはよう" -m "傘を忘れずに"       # 複数メッセージ
+uv run oshirase add monthly --cron "0 8 1 * ? *" -m "月初の作業"                   # cron式を直接指定
+
+# 一覧・詳細
+uv run oshirase list
+uv run oshirase show gomi-moeru
+
+# 変更（指定した項目だけ変わる）
+uv run oshirase update gomi-moeru --at 20:30
+uv run oshirase update gomi-moeru -m "明日は燃えるゴミの日です"
+
+# 一時停止・再開・削除
+uv run oshirase disable gomi-moeru
+uv run oshirase enable gomi-moeru
+uv run oshirase delete gomi-moeru
+
+# 今すぐ送って動作確認
+uv run oshirase send gomi-moeru
+```
+
+- 曜日は `mon,thu` のほか `月,木` でも指定できます。
+- 名前に使えるのは英数字と `- _ .` だけです（EventBridge Scheduler の制約）。
+- 「第1・第3水曜」のように1つの式で表せないものは、`shigen-1` と `shigen-3` のように2件に分けて登録します。
+- 時刻はタイムゾーン `Asia/Tokyo` で解釈します。変えたい場合は `--timezone` を指定します。
+- 共通オプション（`--env dev`、`--profile`、`--region`）はサブコマンドより前に書きます。例：`uv run oshirase --env dev list`。`OSHIRASE_ENV` 環境変数で既定の環境を変えることもできます。
+
+### CLI の実行に必要な IAM 権限
+
+CLI を実行する AWS 認証情報には、次の権限が必要です。
+
+| 権限 | 対象 |
+|---|---|
+| `scheduler:CreateSchedule` / `GetSchedule` / `UpdateSchedule` / `DeleteSchedule` | `arn:aws:scheduler:*:*:schedule/{env}-nandemo-oshirase-reminders/*` |
+| `scheduler:ListSchedules` | `*` |
+| `iam:PassRole` | `{env}-nandemo-oshirase-scheduler-role` |
+| `sts:GetCallerIdentity` | `*` |
+| `lambda:InvokeFunction`（`send` を使う場合のみ） | `{env}-nandemo-oshirase-function` |
+
+### 仕組み
+
+- スケジュールは Lambda に `{"source": "nandemo-oshirase.scheduler", "messages": [...]}` を非同期で invoke します。
+- 送信に失敗すると Lambda はエラーになり、1回だけリトライします。1時間以上遅れたお知らせは送りません。
+
 ## 開発
 
 ```bash
