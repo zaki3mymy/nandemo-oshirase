@@ -133,9 +133,15 @@ jobs:
         run: |
           NAME="ci-${{ github.run_id }}"
           uv run oshirase --env $ENV add "$NAME" --weekly sun --at 03:00 -m "CI smoke test"
+          uv run oshirase --env $ENV list | grep -q "^$NAME "
           uv run oshirase --env $ENV show "$NAME"
           uv run oshirase --env $ENV update "$NAME" --at 04:00
           uv run oshirase --env $ENV disable "$NAME"
+          uv run oshirase --env $ENV delete "$NAME"
+          if uv run oshirase --env $ENV list | grep -q "^$NAME "; then
+            echo "CLI smoke test failed! $NAME still exists after delete"
+            exit 1
+          fi
 
       - name: Smoke test scheduler fires Lambda
         if: steps.config.outputs.env == 'dev'
@@ -169,15 +175,26 @@ jobs:
                 --query 'length(events)' --output text)
               if [ "$COUNT" != "0" ]; then
                 echo "Scheduler fire test passed!"
-                exit 0
+                PASSED=1
+                break
               fi
             fi
             sleep 15
           done
 
-          echo "Scheduler fire test failed! (request id: ${REQUEST_ID:-not found})"
-          exit 1
+          if [ -z "${PASSED:-}" ]; then
+            echo "Scheduler fire test failed! (request id: ${REQUEST_ID:-not found})"
+            exit 1
+          fi
 
+          uv run oshirase --env dev delete "$NAME"
+          if uv run oshirase --env dev list | grep -q "^$NAME "; then
+            echo "Scheduler fire test failed! $NAME still exists after delete"
+            exit 1
+          fi
+
+      # 正常系の delete は各テストのステップで検証済み。
+      # ここはテスト途中で失敗したときの後片付け用なので失敗を無視する
       - name: Cleanup oshirase CLI smoke test
         if: always()
         env:
