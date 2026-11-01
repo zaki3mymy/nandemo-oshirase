@@ -6,7 +6,7 @@ import logging
 import os
 import urllib.error
 import urllib.request
-from typing import Any, NotRequired, TypedDict, TypeIs
+from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 
 from opentelemetry import metrics, trace
 
@@ -215,25 +215,29 @@ def serve_docs() -> LambdaResponse:
     }
 
 
-def load_line_credentials() -> tuple[str, str] | LambdaResponse:
-    """Read LINE credentials from env vars, or return an error response if missing."""
+class LineCredentials(NamedTuple):
+    channel_token: str
+    user_id: str
+
+
+class MissingCredentialError(Exception):
+    """Raised when a required LINE credential environment variable is not set."""
+
+
+def load_line_credentials() -> LineCredentials:
+    """Read LINE credentials from environment variables.
+
+    Raises MissingCredentialError if any of them is not set.
+    """
     channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
     if not channel_token:
-        logger.error("LINE_CHANNEL_TOKEN is not set")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
-        }
+        raise MissingCredentialError("LINE_CHANNEL_TOKEN environment variable not set")
 
     user_id = os.environ.get("LINE_USER_ID")
     if not user_id:
-        logger.error("LINE_USER_ID is not set")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "LINE_USER_ID environment variable not set"}),
-        }
+        raise MissingCredentialError("LINE_USER_ID environment variable not set")
 
-    return channel_token, user_id
+    return LineCredentials(channel_token, user_id)
 
 
 def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) -> LambdaResponse:
@@ -269,10 +273,11 @@ def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) 
 @_tracer.start_as_current_span("handle_notify")
 def handle_notify(event: LambdaEvent) -> LambdaResponse:
     """Handle POST /notify: send messages via LINE."""
-    credentials = load_line_credentials()
-    if isinstance(credentials, dict):
-        return credentials
-    channel_token, user_id = credentials
+    try:
+        channel_token, user_id = load_line_credentials()
+    except MissingCredentialError as e:
+        logger.error("%s", e)
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
     try:
         raw_messages = parse_request(event)
@@ -298,10 +303,11 @@ def handle_scheduled(event: ScheduledEvent) -> LambdaResponse:
         trace.get_current_span().set_attribute("scheduler.schedule_arn", schedule_arn)
     logger.info("Scheduled invocation (schedule_arn=%s)", schedule_arn)
 
-    credentials = load_line_credentials()
-    if isinstance(credentials, dict):
-        raise ScheduledNotificationError(credentials["body"])
-    channel_token, user_id = credentials
+    try:
+        channel_token, user_id = load_line_credentials()
+    except MissingCredentialError as e:
+        logger.error("%s", e)
+        raise ScheduledNotificationError(str(e)) from e
 
     raw_messages = event.get("messages")
     if not isinstance(raw_messages, list) or not all(isinstance(m, str) for m in raw_messages):

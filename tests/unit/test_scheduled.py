@@ -6,6 +6,10 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from nandemo_oshirase.lambda_function import (
     SCHEDULER_EVENT_SOURCE,
@@ -15,6 +19,24 @@ from nandemo_oshirase.lambda_function import (
 )
 
 ENV = {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"}
+
+
+@pytest.fixture(scope="module")
+def _span_exporter_module() -> InMemorySpanExporter:
+    """Collect spans in memory (the global TracerProvider can only be set once per process)."""
+    exporter = InMemorySpanExporter()
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    return exporter
+
+
+@pytest.fixture
+def span_exporter(_span_exporter_module: InMemorySpanExporter) -> InMemorySpanExporter:
+    _span_exporter_module.clear()
+    return _span_exporter_module
 
 
 def make_event(messages: list[str], schedule_arn: str | None = None) -> ScheduledEvent:
@@ -42,10 +64,9 @@ class TestScheduledSuccess:
             [{"type": "text", "text": "明日は燃えるゴミです"}], "test_token", "test_user"
         )
 
-    def test_accepts_schedule_arn(self):
-        event = make_event(
-            ["hello"], schedule_arn="arn:aws:scheduler:ap-northeast-1:123:schedule/g/n"
-        )
+    def test_records_schedule_arn_on_span(self, span_exporter):
+        arn = "arn:aws:scheduler:ap-northeast-1:123:schedule/g/n"
+        event = make_event(["hello"], schedule_arn=arn)
 
         with patch.dict(os.environ, ENV):
             with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
@@ -54,6 +75,21 @@ class TestScheduledSuccess:
                 result = lambda_handler(event, None)
 
         assert result["statusCode"] == 200
+        spans = {span.name: span for span in span_exporter.get_finished_spans()}
+        attributes = spans["handle_scheduled"].attributes or {}
+        assert attributes["scheduler.schedule_arn"] == arn
+
+    def test_no_schedule_arn_attribute_when_absent(self, span_exporter):
+        event = make_event(["hello"])
+
+        with patch.dict(os.environ, ENV):
+            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+                mock_push.return_value = {"statusCode": 200, "body": "{}"}
+
+                lambda_handler(event, None)
+
+        spans = {span.name: span for span in span_exporter.get_finished_spans()}
+        assert "scheduler.schedule_arn" not in (spans["handle_scheduled"].attributes or {})
 
     def test_does_not_route_to_notify_or_webhook(self):
         event = make_event(["hello"])
