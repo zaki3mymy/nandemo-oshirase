@@ -9,8 +9,6 @@
 
 data "aws_caller_identity" "current" {}
 
-data "aws_region" "current" {}
-
 # スケジュールグループ: CLIで作成するスケジュールはすべてこのグループに入れる
 resource "aws_scheduler_schedule_group" "reminders" {
   name = "${local.name_prefix}-reminders"
@@ -30,12 +28,12 @@ resource "aws_iam_role" "scheduler" {
           Service = "scheduler.amazonaws.com"
         }
         # confused deputy対策: このアカウントの reminders グループのスケジュールからのみ引き受け可能
+        # aws:SourceArn にはスケジュールグループのARNを指定する（個々のスケジュールのARNは不可）
+        # https://docs.aws.amazon.com/scheduler/latest/UserGuide/cross-service-confused-deputy-prevention.html
         Condition = {
           StringEquals = {
             "aws:SourceAccount" = data.aws_caller_identity.current.account_id
-          }
-          ArnLike = {
-            "aws:SourceArn" = "arn:aws:scheduler:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:schedule/${aws_scheduler_schedule_group.reminders.name}/*"
+            "aws:SourceArn"     = aws_scheduler_schedule_group.reminders.arn
           }
         }
       }
