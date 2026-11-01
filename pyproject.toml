@@ -48,6 +48,7 @@ cli = [
 ]
 dev = [
     "hypothesis>=6.170.14",
+    "moto[iam,scheduler,server]>=5.2.5",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
