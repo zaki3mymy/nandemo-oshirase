@@ -7,9 +7,16 @@ on:
 
 jobs:
   review:
+    # 公開リポジトリのため、リポジトリの関係者（OWNER/MEMBER/COLLABORATOR）と
+    # 実装用ボット（claudeapp-zaki3mymy[bot]）のコメントでのみ起動する。
+    # ボットの author_association は NONE になるため、ログイン名で個別に許可している。
     if: |
       github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '@claude review')
+      contains(github.event.comment.body, '@claude review') &&
+      (
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) ||
+        github.event.comment.user.login == 'claudeapp-zaki3mymy[bot]'
+      )
     permissions:
       contents: read
       issues: write

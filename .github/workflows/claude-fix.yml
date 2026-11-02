@@ -9,9 +9,27 @@ on:
 
 jobs:
   fix:
+    # 公開リポジトリのため、リポジトリの関係者（OWNER/MEMBER/COLLABORATOR）と
+    # レビュー用ボット（claudereview-zaki3mymy[bot]）のレビュー・コメントでのみ起動する。
+    # ボットの author_association は NONE になるため、ログイン名で個別に許可している。
     if: |
-      (github.event_name == 'pull_request_review' && github.event.review.state == 'changes_requested') ||
-      (github.event_name == 'pull_request_review_comment' && github.event.comment.in_reply_to_id != '' && !contains(github.event.comment.user.login, 'claudeapp-zaki3mymy'))
+      (
+        github.event_name == 'pull_request_review' &&
+        github.event.review.state == 'changes_requested' &&
+        (
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association) ||
+          github.event.review.user.login == 'claudereview-zaki3mymy[bot]'
+        )
+      ) ||
+      (
+        github.event_name == 'pull_request_review_comment' &&
+        github.event.comment.in_reply_to_id != '' &&
+        !contains(github.event.comment.user.login, 'claudeapp-zaki3mymy') &&
+        (
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) ||
+          github.event.comment.user.login == 'claudereview-zaki3mymy[bot]'
+        )
+      )
     permissions:
       contents: write
       issues: write
