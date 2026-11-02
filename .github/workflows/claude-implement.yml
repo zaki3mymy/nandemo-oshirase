@@ -1,0 +1,21 @@
+name: Implement Issue
+run-name: "Implement: Issue #${{ inputs.issue_number }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue番号'
+        required: true
+        type: number
+
+jobs:
+  implement:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: zaki3mymy/actions/.github/workflows/claude-implement.yml@main
+    with:
+      issue_number: ${{ inputs.issue_number }}
+    secrets: inherit

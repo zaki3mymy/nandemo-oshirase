@@ -18,3 +18,13 @@ output "lambda_function_arn" {
   description = "Lambda function ARN"
   value       = aws_lambda_function.notify.arn
 }
+
+output "reminders_schedule_group_name" {
+  description = "EventBridge Scheduler schedule group name for reminders"
+  value       = aws_scheduler_schedule_group.reminders.name
+}
+
+output "scheduler_role_arn" {
+  description = "IAM role ARN used by EventBridge Scheduler to invoke the Lambda function"
+  value       = aws_iam_role.scheduler.arn
+}

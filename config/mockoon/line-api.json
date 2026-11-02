@@ -1,0 +1,101 @@
+{
+  "uuid": "f912013c-d633-413d-803c-e2d8368afad9",
+  "lastMigration": 32,
+  "name": "LINE API stub",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 3000,
+  "hostname": "0.0.0.0",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "c3c22220-04a7-48f0-ae2d-cea7bfdf670a",
+      "type": "http",
+      "documentation": "Stub for LINE Messaging API push endpoint",
+      "method": "post",
+      "endpoint": "v2/bot/message/push",
+      "responses": [
+        {
+          "uuid": "8f2b6a8e-6c7d-4b8a-9e2f-1a2b3c4d5e6f",
+          "body": "{\"message\": \"simulated error\"}",
+          "latency": 0,
+          "statusCode": 500,
+          "label": "Simulated error when request body contains __error__",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [
+            {
+              "target": "body",
+              "modifier": "",
+              "value": ".*__error__.*",
+              "invert": false,
+              "operator": "regex"
+            }
+          ],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "3089075d-3f1c-457c-ae8e-b7759ad6ccd2",
+          "body": "{}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    }
+  ],
+  "rootChildren": [
+    {
+      "type": "route",
+      "uuid": "c3c22220-04a7-48f0-ae2d-cea7bfdf670a"
+    }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "certPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [],
+  "responseHeaders": [],
+  "requestHeaders": [],
+  "data": []
+}

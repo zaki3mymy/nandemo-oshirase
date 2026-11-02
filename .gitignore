@@ -25,9 +25,6 @@ wheels/
 venv/
 ENV/
 
-# uv
-uv.lock
-
 # IDE
 .idea/
 .vscode/
@@ -53,3 +50,9 @@ src/nandemo_oshirase/docs.html
 
 # OS
 .DS_Store
+
+# Local development secrets
+.env.local
+
+# Hypothesis
+.hypothesis/

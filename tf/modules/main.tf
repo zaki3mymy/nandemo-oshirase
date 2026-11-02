@@ -31,6 +31,16 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_xray" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_cloudwatch_metrics" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 # Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
@@ -41,11 +51,32 @@ resource "aws_lambda_function" "notify" {
   runtime          = "python3.13"
   timeout          = 30
 
+  # OTel Lambdaレイヤー: Python計装レイヤー（コミュニティ製） + ADOTコレクターレイヤー（AWS公式）
+  # Python計装レイヤーのバージョンはhttps://github.com/open-telemetry/opentelemetry-lambda/releases で確認
+  # ADOTコレクターレイヤーのバージョンはhttps://aws-otel.github.io/docs/getting-started/lambda で確認
+  # awsxray/awsemfエクスポーターを使う場合はADOTコレクターレイヤー（901920570463）が必要
+  # コミュニティ製コレクターレイヤー（184161586896）にはAWS固有エクスポーターが含まれていない
+  # AWS_LAMBDA_EXEC_WRAPPER（下記environment）でPython計装レイヤーがlambda_handlerをラップする
+  layers = [
+    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_21_0:1",
+    "arn:aws:lambda:ap-northeast-1:901920570463:layer:aws-otel-collector-amd64-ver-0-117-0:1",
+  ]
+
+  tracing_config {
+    mode = "Active"
+  }
+
   environment {
     variables = {
-      LINE_CHANNEL_TOKEN = var.line_channel_token
-      LINE_USER_ID       = var.line_user_id
-      LOG_LEVEL          = var.log_level
+      LINE_CHANNEL_TOKEN                                = var.line_channel_token
+      LINE_USER_ID                                      = var.line_user_id
+      LOG_LEVEL                                         = var.log_level
+      AWS_LAMBDA_EXEC_WRAPPER                           = "/opt/otel-handler"
+      OPENTELEMETRY_COLLECTOR_CONFIG_URI                = "/var/task/collector.yaml"
+      OTEL_SERVICE_NAME                                 = "nandemo-oshirase"
+      OTEL_TRACES_EXPORTER                              = "otlp"
+      OTEL_METRICS_EXPORTER                             = "otlp"
+      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "DELTA"
     }
   }
 }
@@ -196,8 +227,21 @@ resource "aws_api_gateway_deployment" "deployment" {
 
   rest_api_id = aws_api_gateway_rest_api.api.id
 
+  # NOTE: エンドポイント（resource / method / integration）を追加したら、このリストにも追加すること。
+  # 追加しないと、その変更では再デプロイされない。
+  # `.id` ではなくリソース全体を渡すのは、in-place更新（api_key_required の変更など）も検出するため。
   triggers = {
-    redeployment = filemd5("${path.module}/main.tf")
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.notify,
+      aws_api_gateway_method.notify_post,
+      aws_api_gateway_integration.lambda_integration,
+      aws_api_gateway_resource.webhook,
+      aws_api_gateway_method.webhook_post,
+      aws_api_gateway_integration.webhook_integration,
+      aws_api_gateway_resource.docs,
+      aws_api_gateway_method.docs_get,
+      aws_api_gateway_integration.docs_integration,
+    ]))
   }
   lifecycle {
     create_before_destroy = true
