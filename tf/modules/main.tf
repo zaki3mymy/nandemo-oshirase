@@ -227,8 +227,21 @@ resource "aws_api_gateway_deployment" "deployment" {
 
   rest_api_id = aws_api_gateway_rest_api.api.id
 
+  # NOTE: エンドポイント（resource / method / integration）を追加したら、このリストにも追加すること。
+  # 追加しないと、その変更では再デプロイされない。
+  # `.id` ではなくリソース全体を渡すのは、in-place更新（api_key_required の変更など）も検出するため。
   triggers = {
-    redeployment = filemd5("${path.module}/main.tf")
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.notify,
+      aws_api_gateway_method.notify_post,
+      aws_api_gateway_integration.lambda_integration,
+      aws_api_gateway_resource.webhook,
+      aws_api_gateway_method.webhook_post,
+      aws_api_gateway_integration.webhook_integration,
+      aws_api_gateway_resource.docs,
+      aws_api_gateway_method.docs_get,
+      aws_api_gateway_integration.docs_integration,
+    ]))
   }
   lifecycle {
     create_before_destroy = true
