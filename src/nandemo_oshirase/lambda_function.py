@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
@@ -221,23 +222,108 @@ class LineCredentials(NamedTuple):
 
 
 class MissingCredentialError(Exception):
-    """Raised when a required LINE credential environment variable is not set."""
+    """Raised when a required LINE credential cannot be resolved."""
+
+
+# SSM から読んだ値のキャッシュの有効期限。SSM の値を更新したとき、
+# デプロイし直さなくてもこの時間が経てば新しい値に切り替わる。
+CREDENTIALS_CACHE_TTL_SECONDS = 15 * 60
+
+# (環境変数名, パラメータ名を持つ環境変数名)
+_CREDENTIAL_SOURCES = {
+    "channel_token": ("LINE_CHANNEL_TOKEN", "LINE_CHANNEL_TOKEN_PARAM"),
+    "user_id": ("LINE_USER_ID", "LINE_USER_ID_PARAM"),
+}
+
+_ssm_client: Any = None
+_ssm_cache: dict[str, tuple[str, float]] = {}
+
+
+def _get_ssm_client() -> Any:
+    """Return a cached SSM client (boto3 is provided by the Lambda runtime)."""
+    global _ssm_client
+    if _ssm_client is None:
+        import boto3
+
+        _ssm_client = boto3.client("ssm")
+    return _ssm_client
+
+
+def clear_credentials_cache() -> None:
+    """Drop cached SSM parameter values."""
+    _ssm_cache.clear()
+
+
+def _read_ssm_parameters(names: list[str]) -> dict[str, str]:
+    """Read SecureString parameters from SSM, using the in-memory cache."""
+    now = time.monotonic()
+    result: dict[str, str] = {}
+    for name in names:
+        cached = _ssm_cache.get(name)
+        if cached and now < cached[1]:
+            result[name] = cached[0]
+    missing = [name for name in names if name not in result]
+    if not missing:
+        return result
+
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    with _tracer.start_as_current_span("load_line_credentials_from_ssm"):
+        try:
+            response = _get_ssm_client().get_parameters(Names=missing, WithDecryption=True)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "Unknown")
+            raise MissingCredentialError(
+                f"Failed to read LINE credentials from SSM ({code})"
+            ) from e
+        except BotoCoreError as e:
+            raise MissingCredentialError(
+                f"Failed to read LINE credentials from SSM ({type(e).__name__})"
+            ) from e
+
+    if response.get("InvalidParameters"):
+        raise MissingCredentialError(
+            f"SSM parameter not found: {', '.join(response['InvalidParameters'])}"
+        )
+
+    expires_at = now + CREDENTIALS_CACHE_TTL_SECONDS
+    for param in response["Parameters"]:
+        _ssm_cache[param["Name"]] = (param["Value"], expires_at)
+        result[param["Name"]] = param["Value"]
+    logger.info("Loaded %d LINE credential(s) from SSM", len(response["Parameters"]))
+    return result
 
 
 def load_line_credentials() -> LineCredentials:
-    """Read LINE credentials from environment variables.
+    """Resolve LINE credentials.
 
-    Raises MissingCredentialError if any of them is not set.
+    Each value is taken from its environment variable (``LINE_CHANNEL_TOKEN`` /
+    ``LINE_USER_ID``) if set, otherwise read from the SSM parameter named by
+    ``LINE_CHANNEL_TOKEN_PARAM`` / ``LINE_USER_ID_PARAM``.
+
+    Raises MissingCredentialError if any value cannot be resolved.
     """
-    channel_token = os.environ.get("LINE_CHANNEL_TOKEN")
-    if not channel_token:
-        raise MissingCredentialError("LINE_CHANNEL_TOKEN environment variable not set")
+    values: dict[str, str] = {}
+    params: dict[str, str] = {}
+    for field, (env_name, param_env_name) in _CREDENTIAL_SOURCES.items():
+        if direct := os.environ.get(env_name):
+            values[field] = direct
+        elif param_name := os.environ.get(param_env_name):
+            params[field] = param_name
+        else:
+            raise MissingCredentialError(
+                f"{env_name} or {param_env_name} environment variable not set"
+            )
 
-    user_id = os.environ.get("LINE_USER_ID")
-    if not user_id:
-        raise MissingCredentialError("LINE_USER_ID environment variable not set")
+    if params:
+        fetched = _read_ssm_parameters(sorted(set(params.values())))
+        for field, param_name in params.items():
+            value = fetched.get(param_name)
+            if not value:
+                raise MissingCredentialError(f"SSM parameter is empty: {param_name}")
+            values[field] = value
 
-    return LineCredentials(channel_token, user_id)
+    return LineCredentials(values["channel_token"], values["user_id"])
 
 
 def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) -> LambdaResponse:

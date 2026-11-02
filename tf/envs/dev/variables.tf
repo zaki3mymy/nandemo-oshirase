@@ -1,13 +1,7 @@
-variable "line_channel_token" {
-  description = "LINE Messaging API Channel Access Token"
+variable "line_parameter_prefix" {
+  description = "SSM Parameter Store path prefix that holds line_channel_token and line_user_id"
   type        = string
-  sensitive   = true
-}
-
-variable "line_user_id" {
-  description = "LINE User ID to send messages to"
-  type        = string
-  sensitive   = true
+  default     = "/app/nandemo_oshirase/dev"
 }
 
 variable "project_name" {

@@ -1,6 +1,13 @@
 locals {
   name_prefix = "${var.stage_name}-${var.project_name}"
+
+  # LINE の認証情報は SSM Parameter Store（SecureString、AWS管理キー）に Terraform の外で作成し、
+  # Lambda が実行時に読む。値を state に残さないため、data "aws_ssm_parameter" は使わない。
+  line_channel_token_parameter = "${var.line_parameter_prefix}/line_channel_token"
+  line_user_id_parameter       = "${var.line_parameter_prefix}/line_user_id"
 }
+
+data "aws_region" "current" {}
 
 data "archive_file" "lambda_zip" {
   type        = "zip"
@@ -41,6 +48,27 @@ resource "aws_iam_role_policy_attachment" "lambda_cloudwatch_metrics" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+# LINE の認証情報（SSM Parameter Store）の読み取り
+# AWS管理キー（aws/ssm）で暗号化された SecureString なので kms:Decrypt は不要
+resource "aws_iam_role_policy" "lambda_read_line_credentials" {
+  name = "${local.name_prefix}-read-line-credentials"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = ["ssm:GetParameters", "ssm:GetParameter"]
+        Effect = "Allow"
+        Resource = [
+          for name in [local.line_channel_token_parameter, local.line_user_id_parameter] :
+          "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${name}"
+        ]
+      }
+    ]
+  })
+}
+
 # Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
@@ -68,8 +96,8 @@ resource "aws_lambda_function" "notify" {
 
   environment {
     variables = {
-      LINE_CHANNEL_TOKEN                                = var.line_channel_token
-      LINE_USER_ID                                      = var.line_user_id
+      LINE_CHANNEL_TOKEN_PARAM                          = local.line_channel_token_parameter
+      LINE_USER_ID_PARAM                                = local.line_user_id_parameter
       LOG_LEVEL                                         = var.log_level
       AWS_LAMBDA_EXEC_WRAPPER                           = "/opt/otel-handler"
       OPENTELEMETRY_COLLECTOR_CONFIG_URI                = "/var/task/collector.yaml"

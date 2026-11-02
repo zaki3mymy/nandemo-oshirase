@@ -1,8 +1,8 @@
 # Copy this file to terraform.tfvars and fill in your values
 
-line_channel_token = "YOUR_DEV_LINE_CHANNEL_ACCESS_TOKEN"
-line_user_id       = "YOUR_DEV_LINE_USER_ID"
+# LINE の認証情報は SSM Parameter Store から読むため、ここには書かない（README 参照）
 
 # Optional
+# line_parameter_prefix = "/app/nandemo_oshirase/dev"
 # project_name = "nandemo-oshirase"
 # aws_region   = "ap-northeast-1"

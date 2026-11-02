@@ -166,6 +166,4 @@ jobs:
       - name: Terraform Plan
         run: |
           cd ${{ steps.config.outputs.tf_dir }}
-          terraform plan \
-            -var="line_channel_token=${{ secrets.LINE_CHANNEL_TOKEN }}" \
-            -var="line_user_id=${{ secrets.LINE_USER_ID }}"
+          terraform plan

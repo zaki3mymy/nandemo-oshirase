@@ -79,10 +79,7 @@ jobs:
       - name: Terraform Apply
         run: |
           cd ${{ steps.config.outputs.tf_dir }}
-          terraform apply \
-            -var="line_channel_token=${{ secrets.LINE_CHANNEL_TOKEN }}" \
-            -var="line_user_id=${{ secrets.LINE_USER_ID }}" \
-            -auto-approve
+          terraform apply -auto-approve
 
       - name: Test POST /notify
         if: steps.config.outputs.env == 'dev'

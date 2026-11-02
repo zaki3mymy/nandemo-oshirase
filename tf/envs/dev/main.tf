@@ -27,9 +27,8 @@ provider "aws" {
 module "notify" {
   source = "../../modules"
 
-  project_name       = var.project_name
-  line_channel_token = var.line_channel_token
-  line_user_id       = var.line_user_id
-  log_level          = var.log_level
-  stage_name         = "dev"
+  project_name          = var.project_name
+  line_parameter_prefix = var.line_parameter_prefix
+  log_level             = var.log_level
+  stage_name            = "dev"
 }

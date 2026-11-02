@@ -3,16 +3,14 @@ variable "project_name" {
   type        = string
 }
 
-variable "line_channel_token" {
-  description = "LINE Messaging API Channel Access Token"
+variable "line_parameter_prefix" {
+  description = "SSM Parameter Store path prefix that holds line_channel_token and line_user_id (e.g. /app/nandemo_oshirase/prod)"
   type        = string
-  sensitive   = true
-}
 
-variable "line_user_id" {
-  description = "LINE User ID to send messages to"
-  type        = string
-  sensitive   = true
+  validation {
+    condition     = can(regex("^/[^ ]*[^/]$", var.line_parameter_prefix))
+    error_message = "line_parameter_prefix must start with '/' and must not end with '/'."
+  }
 }
 
 variable "log_retention_days" {
