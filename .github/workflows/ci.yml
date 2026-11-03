@@ -124,7 +124,12 @@ jobs:
   terraform-plan:
     runs-on: ubuntu-latest
     name: Terraform Plan
-    if: github.event_name == 'pull_request'
+    # Dependabot の PR では Actions / Environment のシークレットが渡されず AWS 認証に失敗する。
+    # 依存更新は Lambda の zip（src のみ）に影響せず plan 結果も変わらないため、スキップする。
+    # github.actor ではなく PR 作成者で判定し、誰がプッシュしても挙動を揃える。
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     needs: [pre-commit, test-integration]
     environment: ${{ github.base_ref == 'main' && 'prod' || 'develop' }}
     permissions:
