@@ -136,6 +136,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      pull-requests: write # plan の結果を PR にコメントするため
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,9 +145,11 @@ jobs:
         id: config
         run: |
           if [ "${{ github.base_ref }}" = "main" ]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
           else
+            echo "env=dev" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
           fi
@@ -171,6 +174,57 @@ jobs:
             -backend-config="region=ap-northeast-1"
 
       - name: Terraform Plan
+        id: plan
+        # tee でログにも出しつつファイルに保存する。
+        # shell を明示すると pipefail が有効になり、plan の失敗を tee で握りつぶさない
+        shell: bash
         run: |
           cd ${{ steps.config.outputs.tf_dir }}
-          terraform plan
+          terraform plan -no-color 2>&1 | tee "$RUNNER_TEMP/plan.txt"
+
+      - name: Comment plan result
+        # plan が失敗した場合も、エラーの内容を PR に残す
+        if: always() && (steps.plan.outcome == 'success' || steps.plan.outcome == 'failure')
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PLAN_FILE: ${{ runner.temp }}/plan.txt
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
+          TF_ENV: ${{ steps.config.outputs.env }}
+        with:
+          script: |
+            const fs = require('fs')
+            let plan = fs.existsSync(process.env.PLAN_FILE)
+              ? fs.readFileSync(process.env.PLAN_FILE, 'utf8')
+              : '(plan の出力がありません)'
+
+            // PR のコメントは 65,536 文字までなので、長すぎる場合は末尾を残して切り詰める
+            const limit = 60000
+            if (plan.length > limit) {
+              plan = '... (先頭を省略。全文は Actions のログを参照) ...\n' + plan.slice(-limit)
+            }
+
+            let body = `## Terraform Plan (${process.env.TF_ENV})\n\n`
+            if (process.env.PLAN_OUTCOME !== 'success') {
+              body += ':x: **plan に失敗しました。**\n\n'
+            }
+            if (process.env.PLAN_OUTCOME === 'success' && plan.includes('No changes.')) {
+              body += 'No changes.'
+            } else {
+              body += [
+                '<details>',
+                '<summary>Show plan</summary>',
+                '',
+                '```',
+                plan,
+                '```',
+                '',
+                '</details>',
+              ].join('\n')
+            }
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body,
+            })
