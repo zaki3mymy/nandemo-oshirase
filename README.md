@@ -112,6 +112,10 @@ uv run pytest
 uv run pre-commit install
 ```
 
+Nix を使う場合は `nix develop` で Python・uv・Node.js・Terraform（CI と同じ 1.9 系）が揃います。
+
+Claude Code のクラウドセッションでは、SessionStart フック（`.claude/hooks/session-start.sh`）が同じツールを Nix で用意し、`uv sync --dev` と `terraform init -backend=false` まで済ませます。nixpkgs は GitHub ではなく `channels.nixos.org` から取得しています（クラウドセッションの GitHub プロキシは、セッションに付いていないリポジトリの取得を拒否するため）。
+
 ### ローカル環境変数の設定
 
 ローカル実行に必要な秘匿情報は `.env.local` で管理します（git 管理対象外）。
