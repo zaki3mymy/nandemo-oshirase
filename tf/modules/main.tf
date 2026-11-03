@@ -62,7 +62,7 @@ resource "aws_iam_role_policy" "lambda_read_line_credentials" {
         Effect = "Allow"
         Resource = [
           for name in [local.line_channel_token_parameter, local.line_user_id_parameter] :
-          "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${name}"
+          "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${name}"
         ]
       }
     ]
