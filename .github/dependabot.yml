@@ -1,0 +1,34 @@
+# Dependabot のバージョンアップデート（新しいバージョンが出たら更新 PR を作る）
+# 脆弱性の修正 PR（security updates）は zaki3mymy/github の Terraform で有効にしている
+# PR の向き先は既定でデフォルトブランチ（develop）
+version: 2
+updates:
+  # GitHub Actions（SHA で固定したアクションも、SHA とバージョンのコメントを更新する）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Python の依存関係（pyproject.toml / uv.lock）
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # マイナー・パッチは1つの PR にまとめる（メジャーは個別の PR）
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # Terraform のプロバイダ（required_providers と .terraform.lock.hcl）
+  - package-ecosystem: "terraform"
+    directories:
+      - "/tf/envs/dev"
+      - "/tf/envs/prod"
+    schedule:
+      interval: "weekly"
+    groups:
+      terraform-providers:
+        patterns: ["*"]
