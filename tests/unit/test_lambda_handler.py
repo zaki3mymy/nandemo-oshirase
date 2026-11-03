@@ -117,7 +117,12 @@ class TestLambdaHandlerMissingEnv:
 
             expected = {
                 "statusCode": 500,
-                "body": json.dumps({"error": "LINE_CHANNEL_TOKEN environment variable not set"}),
+                "body": json.dumps(
+                    {
+                        "error": "LINE_CHANNEL_TOKEN or LINE_CHANNEL_TOKEN_PARAM "
+                        "environment variable not set"
+                    }
+                ),
             }
             assert result == expected
 
@@ -129,7 +134,9 @@ class TestLambdaHandlerMissingEnv:
 
             expected = {
                 "statusCode": 500,
-                "body": json.dumps({"error": "LINE_USER_ID environment variable not set"}),
+                "body": json.dumps(
+                    {"error": "LINE_USER_ID or LINE_USER_ID_PARAM environment variable not set"}
+                ),
             }
             assert result == expected
 
