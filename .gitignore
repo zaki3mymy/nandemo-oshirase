@@ -45,8 +45,7 @@ htmlcov/
 !example.tfvars
 *.zip
 
-# Nix (Claude Code の SessionStart フックが作る dev-tools へのリンク)
-.nix-dev-tools
+# Nix
 result
 
 # Generated files

@@ -114,7 +114,7 @@ uv run pre-commit install
 
 Nix を使う場合は `nix develop` で Python・uv・Node.js・Terraform（CI と同じ 1.9 系）が揃います。
 
-Claude Code のクラウドセッションでは、SessionStart フック（`.claude/hooks/session-start.sh`）が同じツールを Nix で用意し、`uv sync --dev` と `terraform init -backend=false` まで済ませます。nixpkgs は GitHub ではなく `channels.nixos.org` から取得しています（クラウドセッションの GitHub プロキシは、セッションに付いていないリポジトリの取得を拒否するため）。
+Claude Code のクラウドセッションでは、SessionStart フック（`.claude/hooks/session-start.sh`）が devShell のツールを PATH に足し、`UV_PYTHON` などの環境変数を設定します。ツールの取得は、クラウド環境のセットアップスクリプトに任せています。`uv sync --dev` や `terraform init -backend=false` は必要なときに実行してください。nixpkgs は GitHub ではなく `channels.nixos.org` から取得しています（クラウドセッションの GitHub プロキシは、セッションに付いていないリポジトリの取得を拒否するため）。
 
 ### ローカル環境変数の設定
 

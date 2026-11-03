@@ -52,28 +52,20 @@
           '';
           # Terraform は BUSL-1.1。meta.license に書くと allowUnfree が必要になるため書いていない
         };
-
-      # devShell と、Claude Code のクラウドセッションの SessionStart フック
-      # (.claude/hooks/session-start.sh) の両方で使うツール一式
-      devTools = pkgs: [
-        pkgs.python313
-        pkgs.uv
-        pkgs.nodejs # openapi.yaml から docs.html を生成する npx @redocly/cli 用
-        (mkTerraform pkgs)
-      ];
     in
     {
       packages = forAllSystems (pkgs: {
         terraform = mkTerraform pkgs;
-        dev-tools = pkgs.buildEnv {
-          name = "nandemo-oshirase-dev-tools";
-          paths = devTools pkgs;
-        };
       });
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShellNoCC {
-          packages = devTools pkgs;
+          packages = [
+            pkgs.python313
+            pkgs.uv
+            pkgs.nodejs # openapi.yaml から docs.html を生成する npx @redocly/cli 用
+            (mkTerraform pkgs)
+          ];
 
           # uv には Nix の Python を使わせ、Python 本体のダウンロードはさせない
           env = {
