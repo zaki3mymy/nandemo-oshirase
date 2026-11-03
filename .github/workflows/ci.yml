@@ -154,6 +154,11 @@ jobs:
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
           fi
 
+      # Lambda の zip（src/nandemo_oshirase）には docs.html が含まれる。CD と同じく生成しないと
+      # zip の内容が変わり、plan に Lambda の source_code_hash の差分が毎回出てしまう
+      - name: Build docs
+        run: npx --yes @redocly/cli build-docs openapi.yaml --output src/nandemo_oshirase/docs.html
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
@@ -196,6 +201,12 @@ jobs:
             let plan = fs.existsSync(process.env.PLAN_FILE)
               ? fs.readFileSync(process.env.PLAN_FILE, 'utf8')
               : '(plan の出力がありません)'
+
+            // 公開リポジトリのコメントにアカウントIDやリソースのIDが並ばないよう、
+            // 既存リソースの読み込みの行（Refreshing state... [id=...] など）を除き、
+            // 変更内容・エラー・警告だけを残す
+            const noise = /^\S.*: (Refreshing state\.\.\.|Reading\.\.\.|Read complete after|Preparing import\.\.\.)/
+            plan = plan.split('\n').filter((line) => !noise.test(line)).join('\n').trim()
 
             // PR のコメントは 65,536 文字までなので、長すぎる場合は末尾を残して切り詰める
             const limit = 60000
