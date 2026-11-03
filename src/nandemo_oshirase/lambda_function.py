@@ -12,8 +12,11 @@ from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 from opentelemetry import metrics, trace
 
 logger = logging.getLogger(__name__)
-_log_level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
-logger.setLevel(_log_level if isinstance(_log_level, int) else logging.INFO)
+# 不正な LOG_LEVEL のときは INFO にする
+_log_level = logging.getLevelNamesMapping().get(
+    os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
+)
+logger.setLevel(_log_level)
 
 _tracer = trace.get_tracer("nandemo_oshirase")
 _meter = metrics.get_meter("nandemo_oshirase")
