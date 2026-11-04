@@ -10,6 +10,8 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/cd.yml"
+      # CD は ci.yml を呼び出すため、ci.yml の変更でも CD の起動に問題がないか確認する
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 env:
@@ -23,6 +25,13 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
     secrets: inherit
+    # 再利用ワークフローのジョブは、呼び出し元が許可した以上の権限を要求できない。
+    # ci.yml の terraform-plan ジョブが pull-requests: write を要求するため、ここで許可する
+    # （CD では terraform-plan は実行されないが、権限のチェックは起動時に行われる）
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
 
   deploy:
     needs: ci
