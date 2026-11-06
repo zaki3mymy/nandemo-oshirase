@@ -356,7 +356,12 @@ class TestLambdaHandlerDryRun:
             os.environ,
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
-            with patch("nandemo_oshirase.lambda_function.trace.get_current_span") as mock_span:
+            with (
+                patch("nandemo_oshirase.lambda_function.trace.get_current_span") as mock_span,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
                 lambda_handler(event, None)
 
                 assert (
@@ -390,7 +395,12 @@ class TestLambdaHandlerDryRun:
             os.environ,
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
-            with patch("nandemo_oshirase.lambda_function._batch_count_histogram") as mock_hist:
+            with (
+                patch("nandemo_oshirase.lambda_function._batch_count_histogram") as mock_hist,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
                 lambda_handler(event, None)
 
                 mock_hist.record.assert_not_called()
