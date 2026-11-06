@@ -379,7 +379,10 @@ def deliver_messages(
 
     dry_run が True のときは、LINE の validate API でバッチごとにメッセージを確認し、送信はしない。
     """
-    trace.get_current_span().set_attribute("notify.dry_run", dry_run)
+    if dry_run:
+        # dry run のときだけ付ける。dry run のトレースは notify.dry_run=true で検索でき、
+        # 通常の送信のトレースには属性が付かない
+        trace.get_current_span().set_attribute("notify.dry_run", True)
     messages = validate_messages(raw_messages)
     if not messages:
         logger.warning("No valid messages after validation")
@@ -391,7 +394,6 @@ def deliver_messages(
     formatted = format_line_messages(messages)
     batches = split_into_batches(formatted)
     trace.get_current_span().set_attribute("line.batch_count", len(batches))
-    _batch_count_histogram.record(len(batches))
 
     if dry_run:
         for i, batch in enumerate(batches, start=1):
@@ -414,6 +416,8 @@ def deliver_messages(
             ),
         }
 
+    # dry run の分は含めず、実際に送信したリクエストのバッチ数だけを記録する
+    _batch_count_histogram.record(len(batches))
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
     for i, batch in enumerate(batches, start=1):

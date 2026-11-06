@@ -14,12 +14,24 @@ class TestParseRequestSingleMessage:
     def test_parse_request_single_message(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
         result = parse_request(event)
-        assert result.messages == ["Hello"]
+        assert result == NotifyRequest(messages=["Hello"], dry_run=False)
 
     def test_parse_request_single_message_japanese(self):
         event: LambdaEvent = {"body": json.dumps({"message": "こんにちは"})}
         result = parse_request(event)
-        assert result.messages == ["こんにちは"]
+        assert result == NotifyRequest(messages=["こんにちは"], dry_run=False)
+
+    def test_parse_request_single_message_dry_run(self):
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
+        result = parse_request(event)
+        assert result == NotifyRequest(messages=["Hello"], dry_run=True)
+
+    @pytest.mark.parametrize("value", [False, "true", 1, None, [], {}])
+    def test_parse_request_single_message_dry_run_only_true_boolean(self, value):
+        """JSON の true（真偽値）のときだけ dry run にする"""
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": value})}
+        result = parse_request(event)
+        assert result == NotifyRequest(messages=["Hello"], dry_run=False)
 
 
 class TestParseRequestMultipleMessages:
@@ -28,12 +40,17 @@ class TestParseRequestMultipleMessages:
     def test_parse_request_multiple_messages(self):
         event: LambdaEvent = {"body": json.dumps({"messages": ["Hello", "World"]})}
         result = parse_request(event)
-        assert result.messages == ["Hello", "World"]
+        assert result == NotifyRequest(messages=["Hello", "World"], dry_run=False)
 
     def test_parse_request_multiple_messages_empty_list(self):
         event: LambdaEvent = {"body": json.dumps({"messages": []})}
         result = parse_request(event)
-        assert result.messages == []
+        assert result == NotifyRequest(messages=[], dry_run=False)
+
+    def test_parse_request_multiple_messages_dry_run(self):
+        event: LambdaEvent = {"body": json.dumps({"messages": ["Hello", "World"], "dry_run": True})}
+        result = parse_request(event)
+        assert result == NotifyRequest(messages=["Hello", "World"], dry_run=True)
 
 
 class TestParseRequestBase64:
@@ -44,12 +61,19 @@ class TestParseRequestBase64:
         encoded_body = base64.b64encode(body.encode()).decode()
         event: LambdaEvent = {"body": encoded_body, "isBase64Encoded": True}
         result = parse_request(event)
-        assert result.messages == ["Hello"]
+        assert result == NotifyRequest(messages=["Hello"], dry_run=False)
+
+    def test_parse_request_base64_encoded_dry_run(self):
+        body = json.dumps({"message": "Hello", "dry_run": True})
+        encoded_body = base64.b64encode(body.encode()).decode()
+        event: LambdaEvent = {"body": encoded_body, "isBase64Encoded": True}
+        result = parse_request(event)
+        assert result == NotifyRequest(messages=["Hello"], dry_run=True)
 
     def test_parse_request_base64_encoded_false(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"}), "isBase64Encoded": False}
         result = parse_request(event)
-        assert result.messages == ["Hello"]
+        assert result == NotifyRequest(messages=["Hello"], dry_run=False)
 
 
 class TestParseRequestInvalidJson:
@@ -74,29 +98,3 @@ class TestParseRequestInvalidJson:
         event: LambdaEvent = {"body": json.dumps({"other": "data"})}
         with pytest.raises(ValueError, match="No message"):
             parse_request(event)
-
-
-class TestParseRequestDryRun:
-    """Test parsing the dry_run flag."""
-
-    def test_parse_request_returns_notify_request(self):
-        event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
-        result = parse_request(event)
-        assert result == NotifyRequest(messages=["Hello"], dry_run=False)
-
-    def test_parse_request_dry_run_true(self):
-        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
-        result = parse_request(event)
-        assert result == NotifyRequest(messages=["Hello"], dry_run=True)
-
-    def test_parse_request_dry_run_with_multiple_messages(self):
-        event: LambdaEvent = {"body": json.dumps({"messages": ["a", "b"], "dry_run": True})}
-        result = parse_request(event)
-        assert result == NotifyRequest(messages=["a", "b"], dry_run=True)
-
-    @pytest.mark.parametrize("value", [False, "true", 1, None, [], {}])
-    def test_parse_request_dry_run_only_true_boolean(self, value):
-        """JSON の true（真偽値）のときだけ dry run にする"""
-        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": value})}
-        result = parse_request(event)
-        assert result.dry_run is False
