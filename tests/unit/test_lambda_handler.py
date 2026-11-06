@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from nandemo_oshirase.lambda_function import LambdaEvent, lambda_handler
 
@@ -307,3 +307,36 @@ class TestLambdaHandlerDryRun:
 
                 assert result["statusCode"] == 200
                 mock_push.assert_called_once()
+
+    def test_dry_run_sets_span_attribute(self):
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with patch("nandemo_oshirase.lambda_function.trace.get_current_span") as mock_span:
+                lambda_handler(event, None)
+
+                assert (
+                    call("notify.dry_run", True) in mock_span.return_value.set_attribute.mock_calls
+                )
+
+    def test_normal_send_does_not_set_dry_run_attribute(self):
+        """通常の送信では notify.dry_run の属性を付けない"""
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with (
+                patch("nandemo_oshirase.lambda_function.trace.get_current_span") as mock_span,
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+            ):
+                mock_push.return_value = {"statusCode": 200, "body": "{}"}
+
+                lambda_handler(event, None)
+
+                keys = [c.args[0] for c in mock_span.return_value.set_attribute.mock_calls]
+                assert "notify.dry_run" not in keys

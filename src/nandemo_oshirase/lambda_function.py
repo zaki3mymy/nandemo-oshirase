@@ -357,7 +357,10 @@ def deliver_messages(
 
     dry_run が True のときは、バッチに分けるところまで実行し、LINE には送信しない。
     """
-    trace.get_current_span().set_attribute("notify.dry_run", dry_run)
+    if dry_run:
+        # dry run のときだけ付ける。dry run のトレースは notify.dry_run=true で検索でき、
+        # 通常の送信のトレースには属性が付かない
+        trace.get_current_span().set_attribute("notify.dry_run", True)
     messages = validate_messages(raw_messages)
     if not messages:
         logger.warning("No valid messages after validation")
