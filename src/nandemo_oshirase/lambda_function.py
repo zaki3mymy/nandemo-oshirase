@@ -7,6 +7,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 
 from opentelemetry import metrics, trace
@@ -70,6 +71,24 @@ class ScheduledNotificationError(Exception):
     """
 
 
+@dataclass(frozen=True, slots=True)
+class NotifyRequest:
+    """Parsed body of POST /notify."""
+
+    messages: list[str]
+    # True のときは LINE に送信しない（デプロイ後の動作確認用）
+    dry_run: bool = False
+
+
+def is_dry_run(data: dict[str, Any]) -> bool:
+    """Return True only if ``dry_run`` is the JSON boolean ``true``.
+
+    文字列の "true" などは dry run として扱わない。
+    スケジュール実行のイベントでも同じ判定を使えるように関数にしている。
+    """
+    return data.get("dry_run") is True
+
+
 class WebhookSource(TypedDict):
     type: str
     userId: NotRequired[str]
@@ -85,8 +104,8 @@ class WebhookBody(TypedDict):
     events: NotRequired[list[WebhookEvent]]
 
 
-def parse_request(event: LambdaEvent) -> list[str]:
-    """Parse Lambda event and extract messages."""
+def parse_request(event: LambdaEvent) -> NotifyRequest:
+    """Parse Lambda event and extract messages and the dry_run flag."""
     body = event.get("body")
     if not body:
         raise ValueError("Invalid JSON: empty body")
@@ -102,12 +121,14 @@ def parse_request(event: LambdaEvent) -> list[str]:
 
     if "message" in data:
         logger.info("Parsed single message from request")
-        return [data["message"]]
+        messages = [data["message"]]
     elif "messages" in data:
         logger.info("Parsed %d message(s) from request", len(data["messages"]))
-        return data["messages"]
+        messages = data["messages"]
     else:
         raise ValueError("No message or messages key found")
+
+    return NotifyRequest(messages=messages, dry_run=is_dry_run(data))
 
 
 def validate_messages(messages: list[str]) -> list[str]:
@@ -329,8 +350,14 @@ def load_line_credentials() -> LineCredentials:
     return LineCredentials(values["channel_token"], values["user_id"])
 
 
-def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) -> LambdaResponse:
-    """Validate, format, batch and push messages to LINE."""
+def deliver_messages(
+    raw_messages: list[str], channel_token: str, user_id: str, dry_run: bool = False
+) -> LambdaResponse:
+    """Validate, format, batch and push messages to LINE.
+
+    dry_run が True のときは、バッチに分けるところまで実行し、LINE には送信しない。
+    """
+    trace.get_current_span().set_attribute("notify.dry_run", dry_run)
     messages = validate_messages(raw_messages)
     if not messages:
         logger.warning("No valid messages after validation")
@@ -343,6 +370,21 @@ def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) 
     batches = split_into_batches(formatted)
     trace.get_current_span().set_attribute("line.batch_count", len(batches))
     _batch_count_histogram.record(len(batches))
+
+    if dry_run:
+        logger.info(
+            "Dry run: would send %d message(s) in %d batch(es)", len(messages), len(batches)
+        )
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "message": f"Dry run: would send {len(messages)} message(s) "
+                    f"in {len(batches)} batch(es)"
+                }
+            ),
+        }
+
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
     for i, batch in enumerate(batches, start=1):
@@ -369,7 +411,7 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
     try:
-        raw_messages = parse_request(event)
+        request = parse_request(event)
     except ValueError as e:
         logger.warning("Failed to parse request: %s", e)
         return {
@@ -377,7 +419,7 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
             "body": json.dumps({"error": str(e)}),
         }
 
-    return deliver_messages(raw_messages, channel_token, user_id)
+    return deliver_messages(request.messages, channel_token, user_id, dry_run=request.dry_run)
 
 
 @_tracer.start_as_current_span("handle_scheduled")

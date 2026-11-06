@@ -223,3 +223,87 @@ class TestLambdaHandlerPushError:
                     "body": json.dumps({"error": "Bad Request"}),
                 }
                 assert result == expected
+
+
+class TestLambdaHandlerDryRun:
+    """Test POST /notify with dry_run."""
+
+    def test_dry_run_does_not_push(self):
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+                result = lambda_handler(event, None)
+
+                expected = {
+                    "statusCode": 200,
+                    "body": json.dumps(
+                        {"message": "Dry run: would send 1 message(s) in 1 batch(es)"}
+                    ),
+                }
+                assert result == expected
+                mock_push.assert_not_called()
+
+    def test_dry_run_reports_batches(self):
+        event: LambdaEvent = {
+            "body": json.dumps({"messages": [f"msg{i}" for i in range(7)], "dry_run": True})
+        }
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+                result = lambda_handler(event, None)
+
+                expected = {
+                    "statusCode": 200,
+                    "body": json.dumps(
+                        {"message": "Dry run: would send 7 message(s) in 2 batch(es)"}
+                    ),
+                }
+                assert result == expected
+                mock_push.assert_not_called()
+
+    def test_dry_run_still_validates_messages(self):
+        """dry run でも、送信できるメッセージがなければ通常と同じく 400 を返す"""
+        event: LambdaEvent = {"body": json.dumps({"messages": ["", " "], "dry_run": True})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            result = lambda_handler(event, None)
+
+            expected = {
+                "statusCode": 400,
+                "body": json.dumps({"error": "No valid messages to send"}),
+            }
+            assert result == expected
+
+    def test_dry_run_still_requires_credentials(self):
+        """dry run でも LINE の認証情報を読み込み、読めなければ通常と同じく 500 を返す"""
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
+
+        with patch.dict(os.environ, {"LINE_USER_ID": "test_user"}, clear=True):
+            result = lambda_handler(event, None)
+
+            assert result["statusCode"] == 500
+
+    def test_dry_run_false_sends(self):
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": False})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+                mock_push.return_value = {"statusCode": 200, "body": "{}"}
+
+                result = lambda_handler(event, None)
+
+                assert result["statusCode"] == 200
+                mock_push.assert_called_once()
