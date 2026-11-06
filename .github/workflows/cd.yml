@@ -49,10 +49,15 @@ jobs:
             echo "env=prod" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
+            # 本番は dry run で呼び出し、LINE には送信しない（LINE の validate API でトークンを確認する）
+            echo 'notify_payload={"message": "GitHub Actions deployment completed!", "dry_run": true}' >> $GITHUB_OUTPUT
+            echo "notify_expected=Dry run: would send 1 message(s)" >> $GITHUB_OUTPUT
           else
             echo "env=dev" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
+            echo 'notify_payload={"message": "GitHub Actions deployment completed!"}' >> $GITHUB_OUTPUT
+            echo "notify_expected=Successfully sent 1 message(s)" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure AWS credentials
@@ -91,30 +96,12 @@ jobs:
           cd ${{ steps.config.outputs.tf_dir }}
           terraform apply -auto-approve
 
+      # dev は LINE への送信まで確認する。本番は dry run で、API キー・API Gateway・Lambda・
+      # LINE の認証情報の読み込みと、LINE の validate API によるトークンの確認までを行う
       - name: Test POST /notify
-        if: steps.config.outputs.env == 'dev'
-        run: |
-          API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
-          API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
-
-          RESPONSE=$(curl -s -X POST "$API_ENDPOINT" \
-            -H "x-api-key: $API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"message": "GitHub Actions deployment completed!"}')
-
-          echo "Response: $RESPONSE"
-
-          if echo "$RESPONSE" | grep -q "Successfully sent"; then
-            echo "POST /notify test passed!"
-          else
-            echo "POST /notify test failed!"
-            exit 1
-          fi
-
-      # 空メッセージは Lambda の検証で除かれるため LINE への push は発生せず、
-      # API キー・API Gateway・Lambda までの疎通だけを確認できる
-      - name: Test POST /notify (without sending to LINE)
-        if: steps.config.outputs.env == 'prod'
+        env:
+          PAYLOAD: ${{ steps.config.outputs.notify_payload }}
+          EXPECTED: ${{ steps.config.outputs.notify_expected }}
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
@@ -122,15 +109,16 @@ jobs:
           HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST "$API_ENDPOINT" \
             -H "x-api-key: $API_KEY" \
             -H "Content-Type: application/json" \
-            -d '{"messages": [""]}')
+            -d "$PAYLOAD")
 
           echo "Status: $HTTP_STATUS"
           cat response.json
+          echo
 
-          if [ "$HTTP_STATUS" = "400" ] && grep -q "No valid messages to send" response.json; then
+          if [ "$HTTP_STATUS" = "200" ] && grep -qF "$EXPECTED" response.json; then
             echo "POST /notify test passed!"
           else
-            echo "POST /notify test failed!"
+            echo "POST /notify test failed! Expected 200 and \"$EXPECTED\""
             exit 1
           fi
 
