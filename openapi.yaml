@@ -102,7 +102,7 @@ components:
       type: boolean
       default: false
       # 真偽値の true のときだけ有効で、文字列の "true" などは無視する
-      description: true のときは LINE に送信せず、認証情報の読み込み・メッセージの検証・バッチへの分割までを行う（デプロイ後の動作確認用）
+      description: true のときは LINE に送信せず、認証情報の読み込み・メッセージの検証・バッチへの分割と、LINE の validate API によるトークンとメッセージの形式の確認を行う（デプロイ後の動作確認用）
   securitySchemes:
     ApiKeyAuth:
       type: apiKey

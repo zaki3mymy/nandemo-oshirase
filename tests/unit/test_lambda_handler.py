@@ -235,7 +235,12 @@ class TestLambdaHandlerDryRun:
             os.environ,
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
-            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+            with (
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
                 result = lambda_handler(event, None)
 
                 expected = {
@@ -246,6 +251,9 @@ class TestLambdaHandlerDryRun:
                 }
                 assert result == expected
                 mock_push.assert_not_called()
+                mock_validate.assert_called_once_with(
+                    [{"type": "text", "text": "Hello"}], "test_token"
+                )
 
     def test_dry_run_reports_batches(self):
         event: LambdaEvent = {
@@ -256,7 +264,12 @@ class TestLambdaHandlerDryRun:
             os.environ,
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
-            with patch("nandemo_oshirase.lambda_function.push_messages") as mock_push:
+            with (
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
                 result = lambda_handler(event, None)
 
                 expected = {
@@ -266,6 +279,34 @@ class TestLambdaHandlerDryRun:
                     ),
                 }
                 assert result == expected
+                mock_push.assert_not_called()
+                # LINE の validate API も push API と同じく 1回5件までなので、バッチごとに呼ぶ
+                assert mock_validate.call_count == 2
+
+    def test_dry_run_returns_line_validation_error(self):
+        """LINE の validate API でエラーになったら、そのエラーを返して残りのバッチは確認しない"""
+        event: LambdaEvent = {
+            "body": json.dumps({"messages": [f"msg{i}" for i in range(7)], "dry_run": True})
+        }
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "invalid_token", "LINE_USER_ID": "test_user"},
+        ):
+            with (
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {
+                    "statusCode": 401,
+                    "body": json.dumps({"error": "Unauthorized"}),
+                }
+
+                result = lambda_handler(event, None)
+
+                expected = {"statusCode": 401, "body": json.dumps({"error": "Unauthorized"})}
+                assert result == expected
+                mock_validate.assert_called_once()
                 mock_push.assert_not_called()
 
     def test_dry_run_still_validates_messages(self):
@@ -315,7 +356,12 @@ class TestLambdaHandlerDryRun:
             os.environ,
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
-            with patch("nandemo_oshirase.lambda_function.trace.get_current_span") as mock_span:
+            with (
+                patch("nandemo_oshirase.lambda_function.trace.get_current_span") as mock_span,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
                 lambda_handler(event, None)
 
                 assert (
@@ -349,7 +395,12 @@ class TestLambdaHandlerDryRun:
             os.environ,
             {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
         ):
-            with patch("nandemo_oshirase.lambda_function._batch_count_histogram") as mock_hist:
+            with (
+                patch("nandemo_oshirase.lambda_function._batch_count_histogram") as mock_hist,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
                 lambda_handler(event, None)
 
                 mock_hist.record.assert_not_called()
