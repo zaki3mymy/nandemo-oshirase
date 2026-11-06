@@ -62,6 +62,17 @@ curl -X POST <ENDPOINT> \
   -d '{"messages": ["1つ目", "2つ目", "3つ目"]}'
 ```
 
+送信せずに動作を確認する場合（dry run）:
+
+```bash
+curl -X POST <ENDPOINT> \
+  -H "x-api-key: <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!", "dry_run": true}'
+```
+
+`dry_run` が `true`（真偽値）のときは、LINE の認証情報の読み込み、メッセージの検証、バッチへの分割までを行い、LINE には送信しません。成功すると `200` で `{"message": "Dry run: would send 1 message(s) in 1 batch(es)"}` を返します。
+
 ## 定時お知らせ（`oshirase` CLI）
 
 「毎週月曜21時に『明日は燃えるゴミです』」のような定時のお知らせを、EventBridge Scheduler から Lambda を直接 invoke して送ります。
