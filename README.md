@@ -71,7 +71,10 @@ curl -X POST <ENDPOINT> \
   -d '{"message": "Hello!", "dry_run": true}'
 ```
 
-`dry_run` が `true`（真偽値）のときは、LINE の認証情報の読み込み、メッセージの検証、バッチへの分割までを行い、LINE には送信しません。成功すると `200` で `{"message": "Dry run: would send 1 message(s) in 1 batch(es)"}` を返します。
+`dry_run` が `true`（真偽値）のときは、LINE の認証情報の読み込み、メッセージの検証、バッチへの分割までを行い、LINE には送信しません。そのうえで、LINE の [validate API](https://developers.line.biz/en/reference/messaging-api/#validate-message-objects-of-push-message)（`POST /v2/bot/message/validate/push`）で、チャネルアクセストークンとメッセージの形式を確認します。成功すると `200` で `{"message": "Dry run: would send 1 message(s) in 1 batch(es)"}` を返します。
+
+- トークンが無効なときなど、LINE の validate API がエラーを返したときは、そのステータスコードと `{"error": "..."}` を返します。
+- 送り先（`LINE_USER_ID`）が正しいかは確認できません。
 
 ## 定時お知らせ（`oshirase` CLI）
 
