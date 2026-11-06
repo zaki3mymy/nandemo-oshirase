@@ -372,7 +372,6 @@ def deliver_messages(
     formatted = format_line_messages(messages)
     batches = split_into_batches(formatted)
     trace.get_current_span().set_attribute("line.batch_count", len(batches))
-    _batch_count_histogram.record(len(batches))
 
     if dry_run:
         logger.info(
@@ -388,6 +387,8 @@ def deliver_messages(
             ),
         }
 
+    # dry run の分は含めず、実際に送信したリクエストのバッチ数だけを記録する
+    _batch_count_histogram.record(len(batches))
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
     for i, batch in enumerate(batches, start=1):

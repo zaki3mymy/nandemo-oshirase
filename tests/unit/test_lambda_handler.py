@@ -340,3 +340,33 @@ class TestLambdaHandlerDryRun:
 
                 keys = [c.args[0] for c in mock_span.return_value.set_attribute.mock_calls]
                 assert "notify.dry_run" not in keys
+
+    def test_dry_run_does_not_record_batch_count_metric(self):
+        """dry run は送信しないので、送信したバッチ数のメトリクスに含めない"""
+        event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with patch("nandemo_oshirase.lambda_function._batch_count_histogram") as mock_hist:
+                lambda_handler(event, None)
+
+                mock_hist.record.assert_not_called()
+
+    def test_normal_send_records_batch_count_metric(self):
+        event: LambdaEvent = {"body": json.dumps({"messages": [f"msg{i}" for i in range(7)]})}
+
+        with patch.dict(
+            os.environ,
+            {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"},
+        ):
+            with (
+                patch("nandemo_oshirase.lambda_function._batch_count_histogram") as mock_hist,
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+            ):
+                mock_push.return_value = {"statusCode": 200, "body": "{}"}
+
+                lambda_handler(event, None)
+
+                mock_hist.record.assert_called_once_with(2)
