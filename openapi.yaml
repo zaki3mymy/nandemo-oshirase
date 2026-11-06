@@ -21,6 +21,8 @@ paths:
                     message:
                       type: string
                       description: 送信するメッセージ
+                    dry_run:
+                      $ref: "#/components/schemas/DryRun"
                   required:
                     - message
                 - type: object
@@ -30,6 +32,8 @@ paths:
                       items:
                         type: string
                       description: 送信するメッセージのリスト
+                    dry_run:
+                      $ref: "#/components/schemas/DryRun"
                   required:
                     - messages
             examples:
@@ -43,9 +47,14 @@ paths:
                   messages:
                     - Message 1
                     - Message 2
+              dry_run:
+                summary: Dry run (LINE には送信しない)
+                value:
+                  message: Hello from なんでもお知らせくん!
+                  dry_run: true
       responses:
         "200":
-          description: Successfully sent
+          description: Successfully sent (dry run のときは送信せずに成功を返す)
           content:
             application/json:
               schema:
@@ -53,7 +62,13 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: Successfully sent 1 message(s)
+              examples:
+                sent:
+                  value:
+                    message: Successfully sent 1 message(s)
+                dry_run:
+                  value:
+                    message: "Dry run: would send 1 message(s) in 1 batch(es)"
         "400":
           description: Invalid request
           content:
@@ -82,6 +97,12 @@ paths:
 # /webhook はLINEプラットフォームが内部的に呼び出すエンドポイントであり、
 # APIユーザー向けのドキュメントには記載しない。
 components:
+  schemas:
+    DryRun:
+      type: boolean
+      default: false
+      # 真偽値の true のときだけ有効で、文字列の "true" などは無視する
+      description: true のときは LINE に送信せず、認証情報の読み込み・メッセージの検証・バッチへの分割までを行う（デプロイ後の動作確認用）
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
