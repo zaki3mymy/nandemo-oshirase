@@ -73,12 +73,82 @@
         }
       ],
       "responseMode": null
+    },
+    {
+      "uuid": "91b7db67-aab1-45fe-b278-af92c97c509d",
+      "type": "http",
+      "documentation": "Stub for LINE Messaging API validate push endpoint (validates without sending)",
+      "method": "post",
+      "endpoint": "v2/bot/message/validate/push",
+      "responses": [
+        {
+          "uuid": "c0877fed-3853-46a6-92b9-d42ab95106bb",
+          "body": "{\"message\": \"simulated validation error\"}",
+          "latency": 0,
+          "statusCode": 400,
+          "label": "Simulated validation error when request body contains __error__",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [
+            {
+              "target": "body",
+              "modifier": "",
+              "value": ".*__error__.*",
+              "invert": false,
+              "operator": "regex"
+            }
+          ],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "20e20528-910a-48cd-b0c2-2663a167c48b",
+          "body": "{}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
     }
   ],
   "rootChildren": [
     {
       "type": "route",
       "uuid": "c3c22220-04a7-48f0-ae2d-cea7bfdf670a"
+    },
+    {
+      "type": "route",
+      "uuid": "91b7db67-aab1-45fe-b278-af92c97c509d"
     }
   ],
   "proxyMode": false,
