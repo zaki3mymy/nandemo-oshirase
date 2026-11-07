@@ -1,0 +1,14 @@
+name: PR Title
+run-name: "PR Title: ${{ github.event.pull_request.title }} (#${{ github.event.pull_request.number }})"
+
+# PR のタイトルが Conventional Commits の形かをチェックし、種類に応じてラベルを付ける
+# （feat! など ! 付き: breaking、feat: feat、fix: fix、release: skip-release-notes）
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  pr-title:
+    permissions:
+      pull-requests: write
+    uses: zaki3mymy/actions/.github/workflows/pr-title.yml@main
