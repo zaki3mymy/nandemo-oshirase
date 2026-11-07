@@ -1,6 +1,12 @@
 # Dependabot のバージョンアップデート（新しいバージョンが出たら更新 PR を作る）
 # 脆弱性の修正 PR（security updates）は zaki3mymy/github の Terraform で有効にしている
 # PR の向き先は既定でデフォルトブランチ（develop）
+#
+# PR のタイトル（コミットメッセージ）は commit-message で Conventional Commits の形に固定する。
+# 指定しないと Dependabot は最近のコミットの書き方を真似るため、type のない
+# 「Bump ... from ... to ...」になることがあり、PR Title のチェックで失敗する。
+#   本番の依存関係: chore(deps): bump ...
+#   開発用の依存関係: chore(deps-dev): bump ...
 version: 2
 updates:
   # GitHub Actions（SHA で固定したアクションも、SHA とバージョンのコメントを更新する）
@@ -11,6 +17,10 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
 
   # Python の依存関係（pyproject.toml / uv.lock）
   - package-ecosystem: "uv"
@@ -21,6 +31,10 @@ updates:
       # マイナー・パッチは1つの PR にまとめる（メジャーは個別の PR）
       python-minor-and-patch:
         update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
 
   # Terraform のプロバイダ（required_providers と .terraform.lock.hcl）
   - package-ecosystem: "terraform"
@@ -32,3 +46,7 @@ updates:
     groups:
       terraform-providers:
         patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
