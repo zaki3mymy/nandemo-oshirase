@@ -6,6 +6,14 @@
 
 mainブランチへのマージ時にGitHub Actionsで自動デプロイされます。
 
+### リリース（タグと GitHub リリース）
+
+本番にデプロイしたものに、SemVer のタグ（`vX.Y.Z`）を打ち、GitHub リリースを作ります。
+
+- `v*.*.*` のタグを push すると、`.github/workflows/release.yml` がリリースを作ります（[zaki3mymy/actions](https://github.com/zaki3mymy/actions) の `create-release.yml` を呼びます）。
+- リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
+- タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
+
 ### GitHub Secrets
 
 以下のシークレットを設定してください:
