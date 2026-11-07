@@ -1,0 +1,20 @@
+name: Release
+run-name: "Release: ${{ github.ref_name }}"
+
+# 手でタグを push したときに、GitHub リリースを作る。
+# リリースノートは自動生成で、.github/release.yml でラベルごとの見出しに振り分ける。
+#
+# CD でタグを打つときは GITHUB_TOKEN で push するため、このワークフローは起動しない。
+# その場合は、CD から同じ再利用ワークフローを直接呼ぶ。
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: zaki3mymy/actions/.github/workflows/create-release.yml@main
+    with:
+      tag: ${{ github.ref_name }}
