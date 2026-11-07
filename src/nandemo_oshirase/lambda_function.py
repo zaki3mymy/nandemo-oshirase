@@ -7,6 +7,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 
 from opentelemetry import metrics, trace
@@ -70,6 +71,24 @@ class ScheduledNotificationError(Exception):
     """
 
 
+@dataclass(frozen=True, slots=True)
+class NotifyRequest:
+    """Parsed body of POST /notify."""
+
+    messages: list[str]
+    # True のときは LINE に送信しない（デプロイ後の動作確認用）
+    dry_run: bool = False
+
+
+def is_dry_run(data: dict[str, Any]) -> bool:
+    """Return True only if ``dry_run`` is the JSON boolean ``true``.
+
+    文字列の "true" などは dry run として扱わない。
+    スケジュール実行のイベントでも同じ判定を使えるように関数にしている。
+    """
+    return data.get("dry_run") is True
+
+
 class WebhookSource(TypedDict):
     type: str
     userId: NotRequired[str]
@@ -85,8 +104,8 @@ class WebhookBody(TypedDict):
     events: NotRequired[list[WebhookEvent]]
 
 
-def parse_request(event: LambdaEvent) -> list[str]:
-    """Parse Lambda event and extract messages."""
+def parse_request(event: LambdaEvent) -> NotifyRequest:
+    """Parse Lambda event and extract messages and the dry_run flag."""
     body = event.get("body")
     if not body:
         raise ValueError("Invalid JSON: empty body")
@@ -102,12 +121,14 @@ def parse_request(event: LambdaEvent) -> list[str]:
 
     if "message" in data:
         logger.info("Parsed single message from request")
-        return [data["message"]]
+        messages = [data["message"]]
     elif "messages" in data:
         logger.info("Parsed %d message(s) from request", len(data["messages"]))
-        return data["messages"]
+        messages = data["messages"]
     else:
         raise ValueError("No message or messages key found")
+
+    return NotifyRequest(messages=messages, dry_run=is_dry_run(data))
 
 
 def validate_messages(messages: list[str]) -> list[str]:
@@ -131,38 +152,60 @@ def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list
     return [messages[i : i + batch_size] for i in range(0, len(messages), batch_size)]
 
 
-@_tracer.start_as_current_span("push_messages")
-def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
-    """Send messages to LINE Messaging API."""
-    # このバッチ（最大 batch_size 件）に含まれるメッセージ数。リクエスト全体の総数ではない。
-    trace.get_current_span().set_attribute("line.batch_message_count", len(messages))
+def _post_line_api(path: str, payload: dict[str, Any], channel_token: str) -> LambdaResponse:
+    """POST a JSON payload to the LINE Messaging API.
 
+    LINE API のエラーは statusCode と {"error": reason} に変換して返す（例外にはしない）。
+    """
     base_url = os.environ.get("LINE_API_BASE_URL", "https://api.line.me")
-    url = f"{base_url}/v2/bot/message/push"
+    url = f"{base_url}{path}"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {channel_token}",
     }
-    body = json.dumps({"to": user_id, "messages": messages}).encode("utf-8")
-
-    logger.info("Sending %d message(s) to LINE API (user_id=%s)", len(messages), user_id)
+    body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
 
     try:
         with urllib.request.urlopen(request) as response:
             status = response.status
             response_body = response.read().decode("utf-8")
-            logger.info("LINE API responded with status %d", status)
-            _notification_counter.add(len(messages), {"status": "success"})
+            logger.info("LINE API %s responded with status %d", path, status)
             return {"statusCode": status, "body": response_body}
     except urllib.error.HTTPError as e:
-        logger.error("LINE API error: status=%d reason=%s", e.code, e.reason)
-        _notification_counter.add(len(messages), {"status": "error"})
+        logger.error("LINE API %s error: status=%d reason=%s", path, e.code, e.reason)
         return {"statusCode": e.code, "body": json.dumps({"error": e.reason})}
     except urllib.error.URLError as e:
-        logger.error("LINE API connection error: %s", e.reason)
-        _notification_counter.add(len(messages), {"status": "error"})
+        logger.error("LINE API %s connection error: %s", path, e.reason)
         return {"statusCode": 502, "body": json.dumps({"error": str(e.reason)})}
+
+
+@_tracer.start_as_current_span("push_messages")
+def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
+    """Send messages to LINE Messaging API."""
+    # このバッチ（最大 batch_size 件）に含まれるメッセージ数。リクエスト全体の総数ではない。
+    trace.get_current_span().set_attribute("line.batch_message_count", len(messages))
+
+    logger.info("Sending %d message(s) to LINE API (user_id=%s)", len(messages), user_id)
+    result = _post_line_api(
+        "/v2/bot/message/push", {"to": user_id, "messages": messages}, channel_token
+    )
+    # エラーのときは _post_line_api が 4xx / 5xx を返す
+    status = "success" if 200 <= result["statusCode"] < 300 else "error"
+    _notification_counter.add(len(messages), {"status": status})
+    return result
+
+
+@_tracer.start_as_current_span("validate_push_messages")
+def validate_push_messages(messages: list[LineMessage], channel_token: str) -> LambdaResponse:
+    """Validate message objects with the LINE validate API, without sending them.
+
+    チャネルアクセストークンとメッセージの形式を確認できる。送り先（user_id）は確認できない。
+    """
+    trace.get_current_span().set_attribute("line.batch_message_count", len(messages))
+
+    logger.info("Validating %d message(s) with LINE API", len(messages))
+    return _post_line_api("/v2/bot/message/validate/push", {"messages": messages}, channel_token)
 
 
 @_tracer.start_as_current_span("handle_webhook")
@@ -329,8 +372,17 @@ def load_line_credentials() -> LineCredentials:
     return LineCredentials(values["channel_token"], values["user_id"])
 
 
-def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) -> LambdaResponse:
-    """Validate, format, batch and push messages to LINE."""
+def deliver_messages(
+    raw_messages: list[str], channel_token: str, user_id: str, dry_run: bool = False
+) -> LambdaResponse:
+    """Validate, format, batch and push messages to LINE.
+
+    dry_run が True のときは、LINE の validate API でバッチごとにメッセージを確認し、送信はしない。
+    """
+    if dry_run:
+        # dry run のときだけ付ける。dry run のトレースは notify.dry_run=true で検索でき、
+        # 通常の送信のトレースには属性が付かない
+        trace.get_current_span().set_attribute("notify.dry_run", True)
     messages = validate_messages(raw_messages)
     if not messages:
         logger.warning("No valid messages after validation")
@@ -342,6 +394,29 @@ def deliver_messages(raw_messages: list[str], channel_token: str, user_id: str) 
     formatted = format_line_messages(messages)
     batches = split_into_batches(formatted)
     trace.get_current_span().set_attribute("line.batch_count", len(batches))
+
+    if dry_run:
+        for i, batch in enumerate(batches, start=1):
+            logger.debug("Validating batch %d/%d", i, len(batches))
+            result = validate_push_messages(batch, channel_token)
+            if result["statusCode"] != 200:
+                logger.error("Dry run: batch %d failed validation: %s", i, result)
+                return result
+
+        logger.info(
+            "Dry run: would send %d message(s) in %d batch(es)", len(messages), len(batches)
+        )
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "message": f"Dry run: would send {len(messages)} message(s) "
+                    f"in {len(batches)} batch(es)"
+                }
+            ),
+        }
+
+    # dry run の分は含めず、実際に送信したリクエストのバッチ数だけを記録する
     _batch_count_histogram.record(len(batches))
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
@@ -369,7 +444,7 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
     try:
-        raw_messages = parse_request(event)
+        request = parse_request(event)
     except ValueError as e:
         logger.warning("Failed to parse request: %s", e)
         return {
@@ -377,7 +452,7 @@ def handle_notify(event: LambdaEvent) -> LambdaResponse:
             "body": json.dumps({"error": str(e)}),
         }
 
-    return deliver_messages(raw_messages, channel_token, user_id)
+    return deliver_messages(request.messages, channel_token, user_id, dry_run=request.dry_run)
 
 
 @_tracer.start_as_current_span("handle_scheduled")

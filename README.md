@@ -6,6 +6,17 @@
 
 mainブランチへのマージ時にGitHub Actionsで自動デプロイされます。
 
+### リリース（タグと GitHub リリース）
+
+本番にデプロイしたものに、SemVer のタグ（`vX.Y.Z`）を打ち、GitHub リリースを作ります。
+
+- main へのマージで本番のデプロイが成功すると、CD（`.github/workflows/cd.yml`）が次のバージョンのタグを打ち、リリースを作ります。バージョンは、前のタグからの PR のラベルで決めます（`breaking`: メジャー、`feat`: マイナー、それ以外: パッチ）。
+- 手で `v*.*.*` のタグを push したときは、`.github/workflows/release.yml` がリリースを作ります。
+- どちらも [zaki3mymy/actions](https://github.com/zaki3mymy/actions) の再利用ワークフロー（`next-tag.yml`、`create-release.yml`）を使います。
+- PR のタイトルは Conventional Commits の形（`feat: ...`、`fix(cli): ...` など）にします。`.github/workflows/label-pr-by-title.yml` がタイトルからラベルを付けます（形が違うときは失敗します）。develop から main へのリリース PR は `release: ...` にします。
+- リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
+- タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
+
 ### GitHub Secrets
 
 以下のシークレットを設定してください:
@@ -61,6 +72,20 @@ curl -X POST <ENDPOINT> \
   -H "Content-Type: application/json" \
   -d '{"messages": ["1つ目", "2つ目", "3つ目"]}'
 ```
+
+送信せずに動作を確認する場合（dry run）:
+
+```bash
+curl -X POST <ENDPOINT> \
+  -H "x-api-key: <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!", "dry_run": true}'
+```
+
+`dry_run` が `true`（真偽値）のときは、LINE の認証情報の読み込み、メッセージの検証、バッチへの分割までを行い、LINE には送信しません。そのうえで、LINE の [validate API](https://developers.line.biz/en/reference/messaging-api/#validate-message-objects-of-push-message)（`POST /v2/bot/message/validate/push`）で、チャネルアクセストークンとメッセージの形式を確認します。成功すると `200` で `{"message": "Dry run: would send 1 message(s) in 1 batch(es)"}` を返します。
+
+- トークンが無効なときなど、LINE の validate API がエラーを返したときは、そのステータスコードと `{"error": "..."}` を返します。
+- 送り先（`LINE_USER_ID`）が正しいかは確認できません。
 
 ## 定時お知らせ（`oshirase` CLI）
 
