@@ -210,3 +210,22 @@ jobs:
             echo "GET /docs test failed! Expected 200, got $HTTP_STATUS"
             exit 1
           fi
+
+  # 本番（main）のデプロイが成功したら、次のバージョンのタグを打ち、GitHub リリースを作る
+  # バージョンは前のタグからの PR のラベルで決める（breaking: メジャー、feat: マイナー、それ以外: パッチ）
+  tag:
+    needs: deploy
+    if: github.ref_name == 'main'
+    permissions:
+      contents: write
+    uses: zaki3mymy/actions/.github/workflows/next-tag.yml@main
+
+  # GITHUB_TOKEN で push したタグでは release.yml が起動しないため、ここから直接リリースを作る
+  release:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    permissions:
+      contents: write
+    uses: zaki3mymy/actions/.github/workflows/create-release.yml@main
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
