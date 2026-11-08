@@ -115,31 +115,14 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
   retention_in_days = var.log_retention_days
 }
 
-# IAM Role for API Gateway CloudWatch Logging
-resource "aws_iam_role" "api_gateway_cloudwatch" {
-  name = "${local.name_prefix}-apigw-cloudwatch-role"
+# API Gateway のアカウント設定（CloudWatch Logs 用のロール）は、アカウントとリージョンに1つしかないため
+# zaki3mymy/account-baseline で管理する。AWS の設定は変えずに、この state から外す
+removed {
+  from = aws_api_gateway_account.main
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "apigateway.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "api_gateway_cloudwatch" {
-  role       = aws_iam_role.api_gateway_cloudwatch.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
-}
-
-resource "aws_api_gateway_account" "main" {
-  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch.arn
+  lifecycle {
+    destroy = false
+  }
 }
 
 # CloudWatch Log Group for API Gateway access logs
@@ -294,8 +277,6 @@ resource "aws_api_gateway_stage" "prod" {
       requestTime    = "$context.requestTime"
     })
   }
-
-  depends_on = [aws_api_gateway_account.main]
 }
 
 resource "aws_api_gateway_method_settings" "all" {
