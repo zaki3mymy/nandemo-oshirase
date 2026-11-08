@@ -17,6 +17,10 @@ mainブランチへのマージ時にGitHub Actionsで自動デプロイされ�
 - リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
 - タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
 
+### 前提：API Gateway のアカウント設定
+
+API Gateway がログを CloudWatch Logs に書くためのロールは、AWS のアカウントとリージョンに1つしかない設定のため、このリポジトリではなく [zaki3mymy/account-baseline](https://github.com/zaki3mymy/account-baseline) で管理しています。この設定がないとステージのアクセスログを有効にできず apply が失敗するので、新しいアカウント・リージョンにデプロイするときは account-baseline を先に apply してください。
+
 ### GitHub Secrets
 
 以下のシークレットを設定してください:
