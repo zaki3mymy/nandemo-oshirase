@@ -115,16 +115,6 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
   retention_in_days = var.log_retention_days
 }
 
-# API Gateway のアカウント設定（CloudWatch Logs 用のロール）は、アカウントとリージョンに1つしかないため
-# zaki3mymy/account-baseline で管理する。AWS の設定は変えずに、この state から外す
-removed {
-  from = aws_api_gateway_account.main
-
-  lifecycle {
-    destroy = false
-  }
-}
-
 # CloudWatch Log Group for API Gateway access logs
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/${var.stage_name}"
