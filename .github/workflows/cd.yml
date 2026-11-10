@@ -229,3 +229,33 @@ jobs:
     uses: zaki3mymy/actions/.github/workflows/create-release.yml@main
     with:
       tag: ${{ needs.tag.outputs.tag }}
+
+  # 本番のリリース後に、main を develop に取り込む。
+  # タグは main のマージコミットに打つので、取り込まないと develop の履歴からタグを辿れず、
+  # develop の git describe --tags や setuptools-scm のバージョンが古いタグを基準にしてしまう。
+  # GITHUB_TOKEN での push なので、develop の CD は起動しない
+  back-merge:
+    needs: tag
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    name: Merge main into develop
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Merge main into develop
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          # develop に新しいコミットがなければ fast-forward、あればマージコミットを作る。
+          # main への直接の修正などでコンフリクトしたときは失敗するので、手で取り込む
+          if ! git merge --no-edit origin/main; then
+            echo "::error::main を develop にマージできませんでした（コンフリクト）。手で main を develop に取り込んでください"
+            exit 1
+          fi
+          git push origin HEAD:develop
