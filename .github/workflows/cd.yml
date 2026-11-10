@@ -236,6 +236,6 @@ jobs:
     needs: deploy
     if: github.ref_name == 'main'
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     uses: ./.github/workflows/back-merge.yml
+    secrets: inherit
