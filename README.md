@@ -16,6 +16,7 @@ mainブランチへのマージ時にGitHub Actionsで自動デプロイされ�
 - PR のタイトルは Conventional Commits の形（`feat: ...`、`fix(cli): ...` など）にします。`.github/workflows/label-pr-by-title.yml` がタイトルからラベルを付けます（形が違うときは失敗します）。develop から main へのリリース PR は `release: ...` にします。
 - リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
 - タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
+- パッケージのバージョン（`pyproject.toml`）は書かず、setuptools-scm で git のタグから決めます。タグのコミットでは `1.2.1`、それより後のコミットでは `1.2.2.dev3+gabc1234` のようになります。
 
 ### 前提：API Gateway のアカウント設定
 
