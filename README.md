@@ -16,6 +16,7 @@ mainブランチへのマージ時にGitHub Actionsで自動デプロイされ�
 - PR のタイトルは Conventional Commits の形（`feat: ...`、`fix(cli): ...` など）にします。`.github/workflows/label-pr-by-title.yml` がタイトルからラベルを付けます（形が違うときは失敗します）。develop から main へのリリース PR は `release: ...` にします。
 - リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
 - タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
+- `/docs` に表示するバージョンは、ドキュメントのビルド時（`scripts/build-docs.sh`）に `openapi.yaml` の `info.version` に入れます。`openapi.yaml` にはプレースホルダー（`0.0.0-dev`）だけを書き、バージョンは書きません。CD は `git describe --tags` の値（例: `v1.2.1-3-gabc1234`）を入れます。ローカルのコンテナでは `dev` になります（`--build-arg VERSION=...` で変えられます）。
 
 ### 前提：API Gateway のアカウント設定
 

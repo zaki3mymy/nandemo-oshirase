@@ -6,9 +6,11 @@ RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt
 
 FROM node:20-slim AS docs-builder
 
+# /docs に表示するバージョン（例: podman build --build-arg VERSION=$(git describe --tags) .）
+ARG VERSION=dev
 WORKDIR /docs
-COPY openapi.yaml .
-RUN npx --yes @redocly/cli build-docs openapi.yaml --output docs.html
+COPY openapi.yaml scripts/build-docs.sh ./
+RUN ./build-docs.sh "$VERSION" docs.html openapi.yaml
 
 FROM public.ecr.aws/lambda/python:3.13
 
