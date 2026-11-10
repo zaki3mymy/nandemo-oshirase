@@ -233,9 +233,10 @@ jobs:
   # 本番のリリース後に、main を develop に取り込む。
   # タグは main のマージコミットに打つので、取り込まないと develop の履歴からタグを辿れず、
   # develop の git describe --tags や setuptools-scm のバージョンが古いタグを基準にしてしまう。
-  # GITHUB_TOKEN での push なので、develop の CD は起動しない
+  # GITHUB_TOKEN での push なので、develop の CD は起動しない。
+  # マージするコミットはタグの有無に関係ないので、タグを打たなかったとき（数える PR がないとき）も取り込む
   back-merge:
-    needs: tag
+    needs: deploy
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     name: Merge main into develop
