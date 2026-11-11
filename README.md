@@ -16,6 +16,7 @@ mainブランチへのマージ時にGitHub Actionsで自動デプロイされ�
 - PR のタイトルは Conventional Commits の形（`feat: ...`、`fix(cli): ...` など）にします。`.github/workflows/label-pr-by-title.yml` がタイトルからラベルを付けます（形が違うときは失敗します）。develop から main へのリリース PR は `release: ...` にします。
 - リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
 - タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
+- リリースの後、CD（`.github/workflows/back-merge.yml`）が main → develop の PR を作り、マージコミットでマージします（タグを develop の履歴からも辿れるようにするため）。自動のマージに失敗したとき（コンフリクトなど）は、PR が開いたまま残り（オーナーにアサイン）、CD が失敗します。その PR は「Create a merge commit」でマージしてください。手で取り込むときは、Actions から「Back-merge main into develop」を実行します。
 
 ### 前提：API Gateway のアカウント設定
 
