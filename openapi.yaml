@@ -2,7 +2,7 @@ openapi: "3.0.0"
 info:
   title: なんでもお知らせくん API
   description: LINE通知を送信するAPI
-  version: "1.0.0"
+  version: "0.0.0-dev"
 paths:
   /notify:
     post:
