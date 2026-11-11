@@ -15,6 +15,18 @@ on:
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
+# 同じブランチの CD は同時に動かさず、1本ずつ順番に動かす。
+# PR を続けてマージしたときに、デプロイ（terraform apply）やスモークテストが並行して動き、
+# Terraform の state のロックがぶつかったり、テストが互いに干渉したりするのを防ぐ。
+# - ブランチごとのグループなので、develop と main の CD は同時に動ける
+# - cancel-in-progress: false なので、動いている CD は途中で止めない（apply の途中で止めると危ないため）
+# - 待っている run は1つだけ残り、それより古い待ちの run は cancelled になる。
+#   最新のコミットには前の変更も含まれているので、最新のコミットの CD だけが動けばよい
+#   （main でも、バージョンは前のタグからの PR で決めるので、まとめて1つのリリースになる）
+concurrency:
+  group: cd-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: "ap-northeast-1"
 
