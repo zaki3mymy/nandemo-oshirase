@@ -1,6 +1,7 @@
 [project]
 name = "nandemo-oshirase"
-version = "0.1.0"
+# バージョンは git のタグから setuptools-scm で決める（[tool.setuptools_scm] を参照）
+dynamic = ["version"]
 description = "A simple notification app that sends messages to LINE"
 requires-python = ">=3.13"
 dependencies = [
@@ -39,8 +40,13 @@ line-length = 100
 select = ["E", "F", "I", "W"]
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
+
+# タグのコミットでは v を除いたタグ（例: 1.2.1）、それより後のコミットでは
+# 1.2.2.dev3+gabc1234 のようになる。タグを取れない（git の履歴がない）ときは fallback_version
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
 
 [dependency-groups]
 cli = [

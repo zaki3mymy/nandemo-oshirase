@@ -1,0 +1,87 @@
+name: Back-merge main into develop
+
+# main を develop に取り込む。main → develop の PR を作り、マージコミットでマージする。
+#
+# タグは main のマージコミット（develop → main のリリース PR のマージ）に打つので、
+# 取り込まないと develop の履歴からタグを辿れず、develop の git describe --tags や
+# setuptools-scm のバージョンが古いタグを基準にしてしまう。
+#
+# - 本番のリリース後に CD（cd.yml）から呼ぶ。手で動かすこともできる（workflow_dispatch）
+# - PR の作成とマージは、取り込み専用の GitHub App のトークンで行う（BACK_MERGE_APP_ID / BACK_MERGE_APP_PRIVATE_KEY）。
+#   develop への PR はスカッシュだけに制限しているが、この App は PR のマージのときだけ ruleset を
+#   バイパスできる（zaki3mymy/account-baseline で設定）ので、マージコミットでマージできる。
+#   個人アカウントのリポジトリでは GITHUB_TOKEN をバイパスに入れられないため、App を使う
+# - PR は main から直接ではなく、main と同じコミットを指す一時的なブランチから作る
+#   （マージ後にブランチを自動で削除する設定なので、main を head にしないため）
+# - PR は skip-release-notes を付けるので、次のリリースのバージョンの計算とノートには含まれない
+# - 自動マージに失敗したとき（コンフリクトなど）は PR を開いたまま残し、ジョブを失敗させる。
+#   PR はリポジトリのオーナーにアサインするので、通知でも気づける
+# - App で作った PR なので、CI や PR のタイトルのチェックも起動する（マージはそれを待たない）
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  back-merge:
+    runs-on: ubuntu-latest
+    name: Merge main into develop
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.BACK_MERGE_APP_ID }}
+          private-key: ${{ secrets.BACK_MERGE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # ブランチの push も App で行う
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Open and merge a pull request from main to develop
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git fetch origin main develop
+          main_sha=$(git rev-parse origin/main)
+          if git merge-base --is-ancestor "$main_sha" origin/develop; then
+            echo "develop already contains main ($main_sha). Nothing to do."
+            exit 0
+          fi
+
+          short=${main_sha::7}
+          branch="back-merge/$short"
+          # main と同じコミットを指すブランチを作る（再実行でブランチがすでにあっても同じコミットなら成功する）
+          git push origin "$main_sha:refs/heads/$branch"
+
+          url=$(gh pr list --base develop --head "$branch" --state open --json url --jq '.[0].url // ""')
+          if [[ -z "$url" ]]; then
+            url=$(gh pr create \
+              --base develop \
+              --head "$branch" \
+              --title "release: main を develop に取り込む ($short)" \
+              --label skip-release-notes \
+              --assignee "$GITHUB_REPOSITORY_OWNER" \
+              --body "main（$main_sha）を develop に取り込みます。リリースのタグを develop の履歴からも辿れるようにするためです。
+
+          CD（\`.github/workflows/back-merge.yml\`）が自動で作りました。自動のマージに失敗したときは、内容を確認して **「Create a merge commit」でマージ**してください（スカッシュでは取り込めません）。
+
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+          fi
+          echo "Pull request: $url"
+
+          # 作った直後は、マージできるかの判定が終わっていないことがあるので、何回か試す
+          for i in 1 2 3 4 5; do
+            if gh pr merge "$url" --merge; then
+              echo "Merged $url"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::main → develop の PR を自動でマージできませんでした。$url を確認して、マージコミットでマージしてください"
+          exit 1
