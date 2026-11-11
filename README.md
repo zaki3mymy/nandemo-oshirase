@@ -2,65 +2,9 @@
 
 任意のメッセージをLINEに送信するシンプルな通知API。
 
-## デプロイ
-
-mainブランチへのマージ時にGitHub Actionsで自動デプロイされます。
-
-### リリース（タグと GitHub リリース）
-
-本番にデプロイしたものに、SemVer のタグ（`vX.Y.Z`）を打ち、GitHub リリースを作ります。
-
-- main へのマージで本番のデプロイが成功すると、CD（`.github/workflows/cd.yml`）が次のバージョンのタグを打ち、リリースを作ります。バージョンは、前のタグからの PR のラベルで決めます（`breaking`: メジャー、`feat`: マイナー、それ以外: パッチ）。
-- 手で `v*.*.*` のタグを push したときは、`.github/workflows/release.yml` がリリースを作ります。
-- どちらも [zaki3mymy/actions](https://github.com/zaki3mymy/actions) の再利用ワークフロー（`next-tag.yml`、`create-release.yml`）を使います。
-- PR のタイトルは Conventional Commits の形（`feat: ...`、`fix(cli): ...` など）にします。`.github/workflows/label-pr-by-title.yml` がタイトルからラベルを付けます（形が違うときは失敗します）。develop から main へのリリース PR は `release: ...` にします。リリースすると決めたら、Actions の「Create release PR」（`.github/workflows/release-pr.yml`）を手で実行すると、次のバージョンを決めて `release: vX.Y.Z (develop → main)` の PR を作ります（開いていれば更新します）。本文は `.github/release.yml` の見出しで振り分けたリリースノートです。マージは「Create a merge commit」で行います。
-- リリースノートは GitHub の自動生成で、PR のラベル（`breaking`・`feat`・`fix`・`dependencies`）ごとの見出しに振り分けます（`.github/release.yml`）。`skip-release-notes` の付いた PR（develop から main へのリリース PR など）は載りません。
-- タグは main のマージコミットに打ちます。ノートの生成とリリースの作成には、タグのコミットにある `.github/release.yml` と `.github/workflows/release.yml` が使われます。
-- リリースの後、CD（`.github/workflows/back-merge.yml`）が main → develop の PR を作り、マージコミットでマージします（タグを develop の履歴からも辿れるようにするため）。自動のマージに失敗したとき（コンフリクトなど）は、PR が開いたまま残り（オーナーにアサイン）、CD が失敗します。その PR は「Create a merge commit」でマージしてください。手で取り込むときは、Actions から「Back-merge main into develop」を実行します。
-- パッケージのバージョン（`pyproject.toml`）は書かず、setuptools-scm で git のタグから決めます。タグのコミットでは `1.2.1`、それより後のコミットでは `1.2.2.dev3+gabc1234` のようになります。
-- `/docs` に表示するバージョンは、ドキュメントのビルド時（`scripts/build-docs.sh`）に `openapi.yaml` の `info.version` に入れます。`openapi.yaml` にはプレースホルダー（`0.0.0-dev`）だけを書き、バージョンは書きません。本番（main）の CD は、デプロイの前に次のバージョンを決めて（タグはデプロイの後に打ちます）その値（例: `v1.3.0`）を、develop の CD は `git describe --tags` の値（例: `v1.2.1-3-gabc1234`）を入れます。ローカルのコンテナでは `dev` になります（`--build-arg VERSION=...` で変えられます）。
-
-### 前提：API Gateway のアカウント設定
-
-API Gateway がログを CloudWatch Logs に書くためのロールは、AWS のアカウントとリージョンに1つしかない設定のため、このリポジトリではなく [zaki3mymy/account-baseline](https://github.com/zaki3mymy/account-baseline) で管理しています。この設定がないとステージのアクセスログを有効にできず apply が失敗するので、新しいアカウント・リージョンにデプロイするときは account-baseline を先に apply してください。
-
-### GitHub Secrets
-
-以下のシークレットを設定してください:
-
-| Secret | 説明 |
-|--------|------|
-| `AWS_ROLE_ARN` | OIDC認証用のIAMロールARN |
-| `TERRAFORM_STATE_BUCKET` | Terraform state用S3バケット名 |
-
-### LINE の認証情報（SSM Parameter Store）
-
-LINE のチャネルアクセストークンと通知先のユーザーIDは、環境ごとに SSM Parameter Store の SecureString（AWS管理キー `aws/ssm`）に置き、Lambda が実行時に読み込みます。値は Terraform の state、Lambda の環境変数、GitHub の Secrets のいずれにも置きません。パラメータは Terraform の外で作成してください。
-
-| 環境 | パラメータ |
-|---|---|
-| dev | `/app/nandemo_oshirase/dev/line_channel_token`、`/app/nandemo_oshirase/dev/line_user_id` |
-| prod | `/app/nandemo_oshirase/prod/line_channel_token`、`/app/nandemo_oshirase/prod/line_user_id` |
-
-```bash
-aws ssm put-parameter --type SecureString --name /app/nandemo_oshirase/prod/line_channel_token --value '...'
-aws ssm put-parameter --type SecureString --name /app/nandemo_oshirase/prod/line_user_id --value '...'
-```
-
-- パス（`/app/nandemo_oshirase/<env>`）は、Terraform の変数 `line_parameter_prefix` で変更できます。
-- Lambda は読み込んだ値を15分間キャッシュします。値を更新した場合、デプロイし直さなくても最長15分で反映されます。
-- ローカル実行（podman-compose）では、`.env.local` の `LINE_CHANNEL_TOKEN` と `LINE_USER_ID` が直接使われます（SSM は参照しません）。
-
-### 本番環境のOTelテレメトリ
-
-本番Lambdaには OTel の Python計装レイヤーと Collectorレイヤーをアタッチしており、認証はLambda実行ロールのIAM権限（`AWSXRayDaemonWriteAccess` / `CloudWatchAgentServerPolicy`）で行います。追加のシークレット設定は不要です。
-
-トレース・メトリクスの転送先とCollectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
-
-| テレメトリ | バックエンド | 確認方法 |
-|---|---|---|
-| トレース | AWS X-Ray | X-Ray コンソール / CloudWatch ServiceLens |
-| メトリクス | Amazon CloudWatch (EMF) | CloudWatch メトリクス（namespace: `NandemoOshirase`） |
+- `POST /notify` で、任意のメッセージを LINE に送ります。
+- `oshirase` CLI で、「毎週月曜21時」のような定時のお知らせを登録できます。
+- `GET /docs` で、API のドキュメントを表示します。
 
 ## 使い方
 
@@ -130,86 +74,15 @@ uv run oshirase send gomi-moeru
 - 時刻はタイムゾーン `Asia/Tokyo` で解釈します。変えたい場合は `--timezone` を指定します。
 - 共通オプション（`--env dev`、`--profile`、`--region`）はサブコマンドより前に書きます。例：`uv run oshirase --env dev list`。`OSHIRASE_ENV` 環境変数で既定の環境を変えることもできます。
 
-### CLI の実行に必要な IAM 権限
-
-CLI を実行する AWS 認証情報には、次の権限が必要です。
-
-| 権限 | 対象 |
-|---|---|
-| `scheduler:CreateSchedule` / `GetSchedule` / `UpdateSchedule` / `DeleteSchedule` | `arn:aws:scheduler:*:*:schedule/{env}-nandemo-oshirase-reminders/*` |
-| `scheduler:ListSchedules` | `*` |
-| `iam:PassRole` | `{env}-nandemo-oshirase-scheduler-role` |
-| `sts:GetCallerIdentity` | `*` |
-| `lambda:InvokeFunction`（`send` を使う場合のみ） | `{env}-nandemo-oshirase-function` |
+CLI を実行する AWS 認証情報に必要な IAM 権限は、[docs/deployment.md](docs/deployment.md#cli-の実行に必要な-iam-権限) にまとめています。
 
 ### 仕組み
 
 - スケジュールは Lambda に `{"source": "nandemo-oshirase.scheduler", "messages": [...]}` を非同期で invoke します。
 - 送信に失敗すると Lambda はエラーになり、1回だけリトライします。1時間以上遅れたお知らせは送りません。
 
-## 開発
+## ドキュメント
 
-```bash
-# 依存関係のインストール
-uv sync --dev
-
-# テスト実行
-uv run pytest
-
-# pre-commitフックのインストール
-uv run pre-commit install
-```
-
-### ローカル環境変数の設定
-
-ローカル実行に必要な秘匿情報は `.env.local` で管理します（git 管理対象外）。
-
-```bash
-cp .env.example .env.local
-# .env.local を編集して値を設定
-```
-
-### コンテナでの動作確認
-
-`podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）、OTelのテレメトリ収集・可視化スタック（otel-collector / Jaeger / Prometheus / Grafana）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
-
-```bash
-podman-compose up --build
-```
-
-起動後、Lambda RIE のエンドポイント（`http://localhost:9000/2015-03-31/functions/function/invocations`）経由で各エンドポイントを呼び出せます。
-
-```bash
-# POST /notify
-curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
-  -d '{"httpMethod":"POST","path":"/notify","body":"{\"message\":\"Hello!\"}"}'
-
-# POST /webhook
-curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
-  -d '{"httpMethod":"POST","path":"/webhook","body":"{\"events\":[]}"}'
-
-# GET /docs
-curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
-  -d '{"httpMethod":"GET","path":"/docs"}'
-```
-
-### OTelメトリクス・トレースの確認
-
-lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrument` 経由で起動され、OTLP/HTTPでotel-collectorにテレメトリを送信します。上記のリクエストを送った後、以下のUIで確認できます。
-
-| ツール | URL | 用途 |
-|--------|-----|------|
-| Jaeger | http://localhost:16686 | トレースの可視化 |
-| Grafana | http://localhost:3000 | メトリクスダッシュボード（Prometheusデータソースは自動プロビジョニング済み、初回ログインは `admin` / `admin`） |
-| Prometheus | http://localhost:9090 | メトリクスの生データ確認 |
-
-ローカル用のCollector/Prometheus設定は `config/` ディレクトリにまとめています（`config/otel-collector-config.yaml`、`config/prometheus.yml`、`config/grafana/`）。
-
-### 結合テスト
-
-`tests/integration/` には、手動計装したトレース・メトリクスが実際にJaeger・Prometheusまで届いていることを確認する結合テストがあります。`uv run pytest` の対象には含まれず、`podman-compose up -d` でスタック一式を起動した状態で明示的に実行します。
-
-```bash
-podman-compose up -d
-uv run pytest tests/integration/
-```
+- [デプロイ](docs/deployment.md)：デプロイの前提、GitHub Secrets、LINE の認証情報、本番のテレメトリ、CLI の IAM 権限
+- [リリース](docs/release.md)：タグと GitHub リリース、PR タイトルの規約、バージョンの決め方
+- [開発](docs/development.md)：開発環境の準備、コンテナでの動作確認、結合テスト
