@@ -2,6 +2,57 @@
 
 本番にデプロイしたものに、SemVer のタグ（`vX.Y.Z`）を打ち、GitHub リリースを作ります。
 
+## 開発からリリースまでの流れ
+
+```mermaid
+---
+config:
+  gitGraph:
+    mainBranchName: main
+---
+gitGraph
+  commit id: "release: v1.2.2" tag: "v1.2.2"
+  branch develop
+  checkout develop
+  commit id: "（前回の取り込み）"
+  branch feature/dry-run
+  checkout feature/dry-run
+  commit id: "dry run を追加"
+  commit id: "テストを追加"
+  checkout develop
+  merge feature/dry-run id: "feat: dry run (#101)"
+  branch fix/docs-version
+  checkout fix/docs-version
+  commit id: "表示を直す"
+  checkout develop
+  merge fix/docs-version id: "fix: /docs の版 (#102)"
+  checkout main
+  merge develop id: "release: v1.3.0 (develop → main)" tag: "v1.3.0"
+  checkout develop
+  merge main id: "release: main を develop に取り込む"
+  commit id: "次の開発へ"
+```
+
+※ GitGraph ではスカッシュを描けないため、feature・fix の取り込みもマージとして描いています。実際は develop へはスカッシュでマージするので、develop には PR ごとに1つのコミットだけが残ります。main → develop の取り込みは、実際には main と同じコミットを指す一時的なブランチ（`back-merge/<sha>`）からの PR で行います。
+
+| ブランチ | 役割 | マージの仕方 | デプロイ |
+|---|---|---|---|
+| `main` | 本番にデプロイしたものの履歴。リリースのタグ（`vX.Y.Z`）はここのマージコミットに打つ | develop からのリリース PR を「Create a merge commit」でマージ | 本番（prod）。デプロイが成功すると CD がタグとリリースを作る |
+| `develop` | 開発の本流。feature・fix の PR はここに向ける | feature・fix の PR はスカッシュでマージ | 開発環境（dev） |
+| `feature/*`・`fix/*` など | 1つの変更のための作業ブランチ。develop から切る | PR のタイトルは Conventional Commits の形（`feat: ...`、`fix: ...`）。タイトルのラベルで次のバージョンが決まる | なし（CI だけ） |
+| リリース PR（develop → main） | リリース用のブランチは作らず、develop をそのまま main に PR する。「Create release PR」のワークフローが作る | 人が「Create a merge commit」でマージ | マージが本番のデプロイになる |
+| `back-merge/<sha>`（図では main → develop のマージ） | リリースの後、main（タグの付いたコミット）を develop に取り込むための一時的なブランチ。CD が作り、マージ後に消える | CD がマージコミットで自動マージ（失敗したときは人がマージ） | なし |
+
+手順で書くと、次のようになります。
+
+1. develop から作業ブランチを切り、develop への PR を作ります。PR のタイトルは `feat: ...`・`fix: ...` などにします。
+2. PR を develop にスカッシュでマージします。develop の CD が開発環境にデプロイします。
+3. リリースすると決めたら、Actions の「Create release PR」を手で実行します。`release: vX.Y.Z (develop → main)` の PR ができます。
+4. リリース PR を「Create a merge commit」でマージします。main の CD が本番にデプロイし、成功するとマージコミットに `vX.Y.Z` のタグを打ち、GitHub リリースを作ります。
+5. CD が `back-merge/<sha>` から develop への PR を作り、マージコミットでマージします。これで develop の履歴からもタグを辿れるようになります。
+
+## 詳細
+
 - main へのマージで本番のデプロイが成功すると、CD（`.github/workflows/cd.yml`）が次のバージョンのタグを打ち、リリースを作ります。バージョンは、前のタグからの PR のラベルで決めます（`breaking`: メジャー、`feat`: マイナー、それ以外: パッチ）。
 - 手で `v*.*.*` のタグを push したときは、`.github/workflows/release.yml` がリリースを作ります。
 - どちらも [zaki3mymy/actions](https://github.com/zaki3mymy/actions) の再利用ワークフロー（`next-tag.yml`、`create-release.yml`）を使います。
