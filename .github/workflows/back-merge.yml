@@ -7,9 +7,9 @@ name: Back-merge main into develop
 # setuptools-scm のバージョンが古いタグを基準にしてしまう。
 #
 # - 本番のリリース後に CD（cd.yml）から呼ぶ。手で動かすこともできる（workflow_dispatch）
-# - PR の作成とマージは、取り込み専用の GitHub App のトークンで行う（BACK_MERGE_APP_ID / BACK_MERGE_APP_PRIVATE_KEY）。
-#   develop への PR はスカッシュだけに制限しているが、この App は PR のマージのときだけ ruleset を
-#   バイパスできる（zaki3mymy/account-baseline で設定）ので、マージコミットでマージできる。
+# - PR の作成とマージは、取り込み専用の GitHub App のトークンで行う（BACK_MERGE_APP_CLIENT_ID / BACK_MERGE_APP_PRIVATE_KEY）。
+#   develop への PR はスカッシュだけに制限しているが、この App は develop の ruleset の対象外
+#   （bypass_mode = "exempt"。zaki3mymy/account-baseline で設定）なので、マージコミットでマージできる。
 #   個人アカウントのリポジトリでは GITHUB_TOKEN をバイパスに入れられないため、App を使う
 # - PR は main から直接ではなく、main と同じコミットを指す一時的なブランチから作る
 #   （マージ後にブランチを自動で削除する設定なので、main を head にしないため）
@@ -34,7 +34,8 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ secrets.BACK_MERGE_APP_ID }}
+          # app-id は非推奨（Use 'client-id' instead）。Client ID は App ID とは別の値（例: Iv23...）
+          client-id: ${{ secrets.BACK_MERGE_APP_CLIENT_ID }}
           private-key: ${{ secrets.BACK_MERGE_APP_PRIVATE_KEY }}
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
