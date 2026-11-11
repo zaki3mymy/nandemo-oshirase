@@ -7,6 +7,7 @@ on:
       - "src/**"
       - "tf/**"
       - "openapi.yaml"
+      - "scripts/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/cd.yml"
@@ -33,14 +34,29 @@ jobs:
       contents: read
       pull-requests: write
 
+  # 本番（main）では、デプロイの前に次のバージョンを決める（タグはまだ打たない）。
+  # /docs に表示し、デプロイ後の tag ジョブでこの値のタグを打つので、表示とタグが必ず一致する
+  version:
+    if: github.ref_name == 'main'
+    permissions:
+      contents: write
+    uses: zaki3mymy/actions/.github/workflows/next-tag.yml@main
+    with:
+      push: false
+
   deploy:
-    needs: ci
+    needs: [ci, version]
+    # version は develop ではスキップされるので、スキップでも動くようにする
+    if: ${{ !cancelled() && needs.ci.result == 'success' && needs.version.result != 'failure' }}
     runs-on: ubuntu-latest
     name: Deploy to AWS
     environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # ドキュメントに入れるバージョンを git describe --tags で決めるため、すべての履歴とタグを取る
+          fetch-depth: 0
 
       - name: Set environment config
         id: config
@@ -74,8 +90,29 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      # /docs に表示するバージョン。
+      # main: これから打つタグ（例: v1.3.0）。数える PR がなくタグを打たないときは、前のタグ
+      # develop: git describe --tags（例: v1.2.1-3-gabc1234。最新のタグからのコミット数とコミットの sha が付く）
+      - name: Decide docs version
+        id: version
+        env:
+          NEXT_TAG: ${{ needs.version.outputs.tag }}
+          PREVIOUS_TAG: ${{ needs.version.outputs.previous-tag }}
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            VERSION="${NEXT_TAG:-$PREVIOUS_TAG}"
+          else
+            VERSION=$(git describe --tags)
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not decide the docs version"
+            exit 1
+          fi
+          echo "Docs version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build docs
-        run: npx --yes @redocly/cli build-docs openapi.yaml --output src/nandemo_oshirase/docs.html
+        run: scripts/build-docs.sh "${{ steps.version.outputs.version }}"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -197,28 +234,37 @@ jobs:
         run: uv run oshirase --env dev delete "ci-fire-${{ github.run_id }}" || true
 
       - name: Test GET /docs
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           DOCS_URL="${API_ENDPOINT%/notify}/docs"
 
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$DOCS_URL")
+          HTTP_STATUS=$(curl -s -o docs.html -w "%{http_code}" "$DOCS_URL")
           echo "GET /docs status: $HTTP_STATUS"
 
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "GET /docs test passed!"
-          else
+          if [ "$HTTP_STATUS" != "200" ]; then
             echo "GET /docs test failed! Expected 200, got $HTTP_STATUS"
             exit 1
           fi
+          # デプロイしたバージョンが表示されていること
+          if ! grep -qF "\"version\":\"$VERSION\"" docs.html; then
+            echo "GET /docs test failed! Version $VERSION not found"
+            exit 1
+          fi
+          echo "GET /docs test passed! (version: $VERSION)"
 
-  # 本番（main）のデプロイが成功したら、次のバージョンのタグを打ち、GitHub リリースを作る
+  # 本番（main）のデプロイが成功したら、version ジョブで決めたバージョンのタグを打ち、GitHub リリースを作る
   # バージョンは前のタグからの PR のラベルで決める（breaking: メジャー、feat: マイナー、それ以外: パッチ）
+  # 数える PR がないとき（version の出力が空のとき）は、タグもリリースも作らない
   tag:
-    needs: deploy
-    if: github.ref_name == 'main'
+    needs: [version, deploy]
+    if: github.ref_name == 'main' && needs.version.outputs.tag != ''
     permissions:
       contents: write
     uses: zaki3mymy/actions/.github/workflows/next-tag.yml@main
+    with:
+      tag: ${{ needs.version.outputs.tag }}
 
   # GITHUB_TOKEN で push したタグでは release.yml が起動しないため、ここから直接リリースを作る
   release:
@@ -229,3 +275,13 @@ jobs:
     uses: zaki3mymy/actions/.github/workflows/create-release.yml@main
     with:
       tag: ${{ needs.tag.outputs.tag }}
+
+  # 本番のリリース後に、main を develop に取り込む（main → develop の PR を作り、マージコミットでマージする）。
+  # マージするコミットはタグの有無に関係ないので、タグを打たなかったとき（数える PR がないとき）も取り込む
+  back-merge:
+    needs: deploy
+    if: github.ref_name == 'main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/back-merge.yml
+    secrets: inherit
