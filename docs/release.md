@@ -7,6 +7,7 @@
 ```mermaid
 ---
 config:
+  theme: base
   gitGraph:
     mainBranchName: main
 ---
@@ -14,26 +15,28 @@ gitGraph
   commit id: "release: v1.2.2" tag: "v1.2.2"
   branch develop
   checkout develop
-  commit id: "（前回の取り込み）"
-  branch feature/dry-run
-  checkout feature/dry-run
-  commit id: "dry run を追加"
-  commit id: "テストを追加"
-  checkout develop
-  merge feature/dry-run id: "feat: dry run (#101)"
+    commit id: "（前回の取り込み）"
+    branch feature/dry-run
+    checkout feature/dry-run
+      commit id: "dry run を追加"
+      commit id: "テストを追加" type: REVERSE
+    checkout develop
+    commit id: "squash merge" type: HIGHLIGHT
   branch fix/docs-version
   checkout fix/docs-version
-  commit id: "表示を直す"
+    commit id: "表示を直す" type: REVERSE
   checkout develop
-  merge fix/docs-version id: "fix: /docs の版 (#102)"
+  commit id: "squash merge " type: HIGHLIGHT
+
   checkout main
-  merge develop id: "release: v1.3.0 (develop → main)" tag: "v1.3.0"
+  merge develop id: "release: v1.3.0" tag: "v1.3.0"
+
   checkout develop
   merge main id: "release: main を develop に取り込む"
   commit id: "次の開発へ"
 ```
 
-※ GitGraph ではスカッシュを描けないため、feature・fix の取り込みもマージとして描いています。実際は develop へはスカッシュでマージするので、develop には PR ごとに1つのコミットだけが残ります。main → develop の取り込みは、実際には main と同じコミットを指す一時的なブランチ（`back-merge/<sha>`）からの PR で行います。
+※ feature・fix のブランチは develop にスカッシュでマージするので、ブランチのコミットはそのままでは develop に入らず、develop には PR ごとに1つのコミット（■）だけが残ります。図ではそれを、ブランチの最後のコミット（×）と、develop のスカッシュのコミット（■）で表しています。main → develop の取り込みは、実際には main と同じコミットを指す一時的なブランチ（`back-merge/<sha>`）からの PR で行います。
 
 | ブランチ | 役割 | マージの仕方 | デプロイ |
 |---|---|---|---|
