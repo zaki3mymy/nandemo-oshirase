@@ -244,3 +244,13 @@ jobs:
     uses: zaki3mymy/actions/.github/workflows/create-release.yml@main
     with:
       tag: ${{ needs.tag.outputs.tag }}
+
+  # 本番のリリース後に、main を develop に取り込む（main → develop の PR を作り、マージコミットでマージする）。
+  # マージするコミットはタグの有無に関係ないので、タグを打たなかったとき（数える PR がないとき）も取り込む
+  back-merge:
+    needs: deploy
+    if: github.ref_name == 'main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/back-merge.yml
+    secrets: inherit
