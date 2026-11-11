@@ -890,7 +890,6 @@ wheels = [
 
 [[package]]
 name = "nandemo-oshirase"
-version = "0.1.0"
 source = { editable = "." }
 default-groups = ["cli", "dev"]
 dependencies = [
