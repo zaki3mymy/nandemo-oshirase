@@ -87,6 +87,12 @@ resource "aws_lambda_function" "notify" {
     "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-collector-amd64-0_24_0:1",
   ]
 
+  # X-Ray にはトレースを送らない（Grafana Cloud に送る）。
+  # ブロックを消すだけでは今の設定（Active）が残るため、PassThrough を明示する
+  tracing_config {
+    mode = "PassThrough"
+  }
+
   environment {
     variables = {
       LINE_CHANNEL_TOKEN_PARAM           = local.line_channel_token_parameter
