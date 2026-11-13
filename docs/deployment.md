@@ -55,7 +55,7 @@ Grafana Cloud のスタックと、OTLP で送るためのトークンは [zaki3
 | dev | `/app/grafana/dev/otlp_auth` |
 | prod | `/app/grafana/prod/otlp_auth` |
 
-Collectorレイヤーは SSM Parameter Store を読めないため、Terraform がこのパラメータを読み、Lambda の環境変数 `GRAFANA_CLOUD_OTLP_AUTH` に渡します。そのため、LINE の認証情報と違い、**この値は Terraform の state と Lambda の環境変数に残ります**。送信先（`GRAFANA_CLOUD_OTLP_ENDPOINT`）は秘密ではないので、Terraform の変数 `grafana_otlp_endpoint` に直接書いています。
+Collectorレイヤーは SSM Parameter Store を読めないため、Terraform がこのパラメータを読み、Lambda の環境変数 `GRAFANA_CLOUD_OTLP_AUTH` に渡します。そのため、LINE の認証情報と違い、**この値は Terraform の state と Lambda の環境変数に残ります**。送信先（`GRAFANA_CLOUD_OTLP_ENDPOINT`）は秘密ではないので、Terraform の変数 `grafana_otlp_endpoint` に直接書いています。値は、account-baseline の `terraform output otlp_endpoint`（スタックの `otlp_url`）に `/otlp` を付けたものです。
 
 account-baseline でトークンを作り直したときは、このリポジトリでもう一度 apply すると、Lambda の環境変数が新しい値に変わります。
 

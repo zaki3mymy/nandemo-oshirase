@@ -31,7 +31,9 @@ variable "stage_name" {
 }
 
 variable "grafana_otlp_endpoint" {
-  description = "Grafana Cloud の OTLP の送信先（account-baseline の terraform output otlp_endpoint）"
+  # account-baseline の terraform output otlp_endpoint（スタックの otlp_url）に /otlp を付けたもの。
+  # otlphttp exporter はこの後ろに /v1/traces・/v1/metrics を付けて送る
+  description = "Grafana Cloud の OTLP の送信先（スタックの otlp_url に /otlp を付けたもの）"
   type        = string
   default     = "https://otlp-gateway-prod-ap-northeast-0.grafana.net/otlp"
 }
