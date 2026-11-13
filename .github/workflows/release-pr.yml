@@ -2,7 +2,7 @@ name: Create release PR
 run-name: "Create release PR"
 
 # develop → main のリリース PR を作る（すでに開いていれば、タイトルと本文を最新にする）。
-# 「リリースする」と決めたときに手で実行する（workflow_dispatch）。中身は zaki3mymy/actions の release-pr.yml。
+# 「リリースする」と決めたときに手で実行する（workflow_dispatch）。
 #
 # - 次のバージョンは next-tag.yml で決める（タグは打たない。タグは main のデプロイの後に CD が打つ）
 # - 本文は .github/release.yml の見出しで振り分けたリリースノート

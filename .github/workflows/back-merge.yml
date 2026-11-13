@@ -1,7 +1,6 @@
 name: Back-merge main into develop
 
 # main を develop に取り込む（main → develop の PR を作り、マージコミットでマージする）。
-# 中身は zaki3mymy/actions の back-merge.yml。
 #
 # - 本番のリリース後に CD（cd.yml）から呼ぶ。手で動かすこともできる（workflow_dispatch）
 # - PR の作成とマージは、取り込み専用の GitHub App のトークンで行う（BACK_MERGE_APP_CLIENT_ID / BACK_MERGE_APP_PRIVATE_KEY）。
