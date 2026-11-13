@@ -35,15 +35,29 @@ aws ssm put-parameter --type SecureString --name /app/nandemo_oshirase/prod/line
 
 ## 本番環境のOTelテレメトリ
 
-本番Lambdaには OTel の Python計装レイヤーと Collectorレイヤーをアタッチしており、認証はLambda実行ロールのIAM権限（`AWSXRayDaemonWriteAccess` / `CloudWatchAgentServerPolicy`）で行います。追加のシークレット設定は不要です。
-
-トレース・メトリクスの転送先とCollectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
+Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どちらも [opentelemetry-lambda](https://github.com/open-telemetry/opentelemetry-lambda) のコミュニティ製）をアタッチしています。アプリが送ったトレース・メトリクスを Collector が受け取り、Grafana Cloud に OTLP で送ります。
 
 | テレメトリ | バックエンド | 確認方法 |
 |---|---|---|
-| トレース | AWS X-Ray | X-Ray コンソール / CloudWatch ServiceLens |
-| メトリクス | Amazon CloudWatch (EMF) | CloudWatch メトリクス（namespace: `NandemoOshirase`） |
+| トレース | Grafana Cloud（Tempo） | Grafana の Explore（データソース: Tempo） |
+| メトリクス | Grafana Cloud（Prometheus 互換） | Grafana の Explore（データソース: Prometheus） |
 
+- Collectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
+- 環境は、リソース属性 `deployment.environment.name`（と `deployment.environment`）の `dev`・`prod` で区別します。
+- メトリクスは累積値（cumulative）で送ります。Lambda の実行環境が作り直されるとカウンタは 0 から数え直すので、Grafana では `increase()` や `rate()` で集計してください。
+
+### Grafana Cloud の認証情報
+
+Grafana Cloud のスタックと、OTLP で送るためのトークンは [zaki3mymy/account-baseline](https://github.com/zaki3mymy/account-baseline) の `grafana/` で管理しています。account-baseline が、Authorization ヘッダーの値（`Basic <base64(スタックの ID:トークン)>`）を環境ごとに SSM Parameter Store の SecureString に置きます。
+
+| 環境 | パラメータ |
+|---|---|
+| dev | `/app/grafana/dev/otlp_auth` |
+| prod | `/app/grafana/prod/otlp_auth` |
+
+Collectorレイヤーは SSM Parameter Store を読めないため、Terraform がこのパラメータを読み、Lambda の環境変数 `GRAFANA_CLOUD_OTLP_AUTH` に渡します。そのため、LINE の認証情報と違い、**この値は Terraform の state と Lambda の環境変数に残ります**。送信先（`GRAFANA_CLOUD_OTLP_ENDPOINT`）は秘密ではないので、Terraform の変数 `grafana_otlp_endpoint` に直接書いています。
+
+account-baseline でトークンを作り直したときは、このリポジトリでもう一度 apply すると、Lambda の環境変数が新しい値に変わります。
 
 ## CLI の実行に必要な IAM 権限
 

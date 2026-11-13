@@ -29,3 +29,14 @@ variable "stage_name" {
   description = "API Gateway stage name"
   type        = string
 }
+
+variable "grafana_otlp_endpoint" {
+  description = "Grafana Cloud の OTLP の送信先（account-baseline の terraform output otlp_endpoint）"
+  type        = string
+  default     = "https://otlp-gateway-prod-ap-northeast-0.grafana.net/otlp"
+}
+
+variable "grafana_otlp_auth_parameter" {
+  description = "Grafana Cloud に OTLP で送るための Authorization ヘッダーの値を置いた SSM パラメータの名前（例: /app/grafana/prod/otlp_auth）"
+  type        = string
+}
