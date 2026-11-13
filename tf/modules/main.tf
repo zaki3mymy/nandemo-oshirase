@@ -7,6 +7,14 @@ locals {
   line_user_id_parameter       = "${var.line_parameter_prefix}/line_user_id"
 }
 
+# Grafana Cloud に OTLP で送るための Authorization ヘッダーの値（Basic <base64(スタックの ID:トークン)>）。
+# 環境ごとに SSM Parameter Store に置かれている（このリポジトリの外で管理する）。
+# Lambda の Collector レイヤーは SSM を読めないため、ここで読んで Lambda の環境変数に渡す。
+# LINE の認証情報と違い、この値は Terraform の state と Lambda の環境変数に残る（docs/deployment.md 参照）
+data "aws_ssm_parameter" "grafana_otlp_auth" {
+  name = var.grafana_otlp_auth_parameter
+}
+
 data "aws_region" "current" {}
 
 data "archive_file" "lambda_zip" {
@@ -36,16 +44,6 @@ resource "aws_iam_role" "lambda_role" {
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_xray" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_cloudwatch_metrics" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 # LINE の認証情報（SSM Parameter Store）の読み取り
@@ -79,32 +77,39 @@ resource "aws_lambda_function" "notify" {
   runtime          = "python3.13"
   timeout          = 30
 
-  # OTel Lambdaレイヤー: Python計装レイヤー（コミュニティ製） + ADOTコレクターレイヤー（AWS公式）
-  # Python計装レイヤーのバージョンはhttps://github.com/open-telemetry/opentelemetry-lambda/releases で確認
-  # ADOTコレクターレイヤーのバージョンはhttps://aws-otel.github.io/docs/getting-started/lambda で確認
-  # awsxray/awsemfエクスポーターを使う場合はADOTコレクターレイヤー（901920570463）が必要
-  # コミュニティ製コレクターレイヤー（184161586896）にはAWS固有エクスポーターが含まれていない
+  # OTel Lambdaレイヤー: Python計装レイヤー + コレクターレイヤー（どちらもコミュニティ製）
+  # バージョンは https://github.com/open-telemetry/opentelemetry-lambda/releases で確認
+  # （layer-python/<version>・layer-collector/<version> のタグ）
+  # コレクターは OTLP を受けて、Grafana Cloud に otlphttp で送る（collector.yaml）
   # AWS_LAMBDA_EXEC_WRAPPER（下記environment）でPython計装レイヤーがlambda_handlerをラップする
   layers = [
     "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_21_0:1",
-    "arn:aws:lambda:ap-northeast-1:901920570463:layer:aws-otel-collector-amd64-ver-0-117-0:1",
+    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-collector-amd64-0_24_0:1",
   ]
 
+  # X-Ray にはトレースを送らない（Grafana Cloud に送る）。
+  # ブロックを消すだけでは今の設定（Active）が残るため、PassThrough を明示する
   tracing_config {
-    mode = "Active"
+    mode = "PassThrough"
   }
 
   environment {
     variables = {
-      LINE_CHANNEL_TOKEN_PARAM                          = local.line_channel_token_parameter
-      LINE_USER_ID_PARAM                                = local.line_user_id_parameter
-      LOG_LEVEL                                         = var.log_level
-      AWS_LAMBDA_EXEC_WRAPPER                           = "/opt/otel-handler"
-      OPENTELEMETRY_COLLECTOR_CONFIG_URI                = "/var/task/collector.yaml"
-      OTEL_SERVICE_NAME                                 = "nandemo-oshirase"
-      OTEL_TRACES_EXPORTER                              = "otlp"
-      OTEL_METRICS_EXPORTER                             = "otlp"
-      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "DELTA"
+      LINE_CHANNEL_TOKEN_PARAM           = local.line_channel_token_parameter
+      LINE_USER_ID_PARAM                 = local.line_user_id_parameter
+      LOG_LEVEL                          = var.log_level
+      AWS_LAMBDA_EXEC_WRAPPER            = "/opt/otel-handler"
+      OPENTELEMETRY_COLLECTOR_CONFIG_URI = "/var/task/collector.yaml"
+      OTEL_SERVICE_NAME                  = "nandemo-oshirase"
+      # 環境（dev・prod）。Grafana で環境ごとに絞り込むために付ける。
+      # deployment.environment.name は新しいセマンティック規約の名前で、古い名前も一緒に付けておく
+      OTEL_RESOURCE_ATTRIBUTES = "deployment.environment.name=${var.stage_name},deployment.environment=${var.stage_name}"
+      OTEL_TRACES_EXPORTER     = "otlp"
+      OTEL_METRICS_EXPORTER    = "otlp"
+      # メトリクスは SDK の既定の cumulative（累積値）で送る（Grafana Cloud は Prometheus 互換で累積値を前提にする）
+      # collector.yaml が読む、Grafana Cloud の OTLP の送信先と Authorization ヘッダーの値
+      GRAFANA_CLOUD_OTLP_ENDPOINT = var.grafana_otlp_endpoint
+      GRAFANA_CLOUD_OTLP_AUTH     = data.aws_ssm_parameter.grafana_otlp_auth.value
     }
   }
 }

@@ -1,21 +1,32 @@
+# Lambda の Collector レイヤー（opentelemetry-lambda のコミュニティ製）の設定。
+# アプリ（Python 計装レイヤー）から OTLP で受けて、Grafana Cloud に otlphttp で送る。
+# 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/main.tf）。
+# decouple processor で、Lambda の応答を返してから送るようにする（実行の終わりに Grafana Cloud への
+# 送信を待たない）。送り終わるまで実行環境は止められない。
 receivers:
   otlp:
     protocols:
       grpc:
+        endpoint: localhost:4317
       http:
+        endpoint: localhost:4318
+
+processors:
+  decouple:
 
 exporters:
-  awsxray:
-    region: ap-northeast-1
-  awsemf:
-    region: ap-northeast-1
-    namespace: NandemoOshirase
+  otlphttp/grafana_cloud:
+    endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:GRAFANA_CLOUD_OTLP_AUTH}
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      exporters: [awsxray]
+      processors: [decouple]
+      exporters: [otlphttp/grafana_cloud]
     metrics:
       receivers: [otlp]
-      exporters: [awsemf]
+      processors: [decouple]
+      exporters: [otlphttp/grafana_cloud]
