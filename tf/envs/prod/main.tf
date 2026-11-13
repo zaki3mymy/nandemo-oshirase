@@ -32,6 +32,6 @@ module "notify" {
   log_level             = var.log_level
   stage_name            = "prod"
 
-  # zaki3mymy/account-baseline の grafana/ が作る
+  # Grafana Cloud に送るための Authorization ヘッダーの値を置いた SSM パラメータ（このリポジトリの外で作る）
   grafana_otlp_auth_parameter = "/app/grafana/prod/otlp_auth"
 }

@@ -8,7 +8,7 @@ locals {
 }
 
 # Grafana Cloud に OTLP で送るための Authorization ヘッダーの値（Basic <base64(スタックの ID:トークン)>）。
-# zaki3mymy/account-baseline の grafana/ が SSM Parameter Store に置いている。
+# 環境ごとに SSM Parameter Store に置かれている（このリポジトリの外で管理する）。
 # Lambda の Collector レイヤーは SSM を読めないため、ここで読んで Lambda の環境変数に渡す。
 # LINE の認証情報と違い、この値は Terraform の state と Lambda の環境変数に残る（docs/deployment.md 参照）
 data "aws_ssm_parameter" "grafana_otlp_auth" {
