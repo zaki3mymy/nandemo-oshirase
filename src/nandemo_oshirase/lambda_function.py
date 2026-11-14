@@ -1,6 +1,7 @@
 """Lambda function for LINE notification service."""
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -372,6 +373,42 @@ def load_line_credentials() -> LineCredentials:
     return LineCredentials(values["channel_token"], values["user_id"])
 
 
+# 送信に成功したバッチを覚えておく時間。この時間内に同じリクエストが再送されたら、
+# 送信済みのバッチは LINE に送らない。この時間を過ぎた再送は別のメッセージとして送る。
+# キャッシュは Lambda の実行環境のメモリにあるので、別の実行環境に届いた再送は重複を検知できない。
+DEDUP_TTL_SECONDS = 15 * 60
+
+# バッチのキー -> 有効期限（time.monotonic() の値）
+_sent_batches: dict[str, float] = {}
+
+
+def clear_sent_batches_cache() -> None:
+    """Forget which batches have been sent."""
+    _sent_batches.clear()
+
+
+def _batch_key(user_id: str, messages: list[str], batch_index: int) -> str:
+    """Return the key that identifies one batch of one request.
+
+    リクエストのメッセージ全体とバッチの位置から作る。同じ内容のバッチが
+    1つのリクエストに2回あっても、別のバッチとして扱う。
+    """
+    payload = json.dumps([user_id, messages, batch_index], ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _is_sent(key: str, now: float) -> bool:
+    expires_at = _sent_batches.get(key)
+    return expires_at is not None and now < expires_at
+
+
+def _mark_sent(key: str, now: float) -> None:
+    # 期限切れのキーを消して、キャッシュが増え続けないようにする
+    for expired in [k for k, exp in _sent_batches.items() if exp <= now]:
+        del _sent_batches[expired]
+    _sent_batches[key] = now + DEDUP_TTL_SECONDS
+
+
 def deliver_messages(
     raw_messages: list[str], channel_token: str, user_id: str, dry_run: bool = False
 ) -> LambdaResponse:
@@ -420,13 +457,26 @@ def deliver_messages(
     _batch_count_histogram.record(len(batches))
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
+    # 途中のバッチで失敗したリクエストが再送されたときは、失敗したバッチから送り直す
+    skipped = 0
     for i, batch in enumerate(batches, start=1):
+        key = _batch_key(user_id, messages, i)
+        if _is_sent(key, time.monotonic()):
+            logger.info("Batch %d/%d was already sent, skipping", i, len(batches))
+            skipped += 1
+            continue
         logger.debug("Sending batch %d/%d", i, len(batches))
         result = push_messages(batch, channel_token, user_id)
         if result["statusCode"] != 200:
             logger.error("Batch %d failed: %s", i, result)
             return result
+        _mark_sent(key, time.monotonic())
 
+    if skipped:
+        trace.get_current_span().set_attribute("notify.skipped_batch_count", skipped)
+        logger.info("Skipped %d already-sent batch(es)", skipped)
+
+    # 再送でも、最初のリクエストと同じレスポンスを返す
     logger.info("All messages sent successfully")
     return {
         "statusCode": 200,

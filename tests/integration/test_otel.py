@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 import pytest
 
@@ -39,6 +40,8 @@ def require_services():
 
 
 def _invoke_lambda(messages: list[str]) -> int:
+    # 15 分以内に同じメッセージを送ると、送信済みとしてスキップされるため、一意にする
+    messages = [f"{m} {uuid.uuid4()}" for m in messages]
     body = json.dumps(
         {
             "httpMethod": "POST",
@@ -97,7 +100,7 @@ def test_trace_linked_from_external_caller():
             "httpMethod": "POST",
             "path": "/notify",
             "headers": {"traceparent": traceparent},
-            "body": json.dumps({"messages": ["分散トレーシング結合テスト"]}),
+            "body": json.dumps({"messages": [f"分散トレーシング結合テスト {uuid.uuid4()}"]}),
             "queryStringParameters": None,
         }
     ).encode()
