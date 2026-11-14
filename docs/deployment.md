@@ -49,6 +49,7 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 - Collectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
 - 環境は、リソース属性 `deployment.environment.name`（と `deployment.environment`）の `dev`・`prod` で区別します。
 - コールドスタートのときは、実行環境の初期化が `init <関数名>`（属性 `faas.coldstart=true`）という span になり、そのとき呼ばれた実行と同じトレースに入ります（Collector の `telemetryapi` receiver と `coldstart` processor）。また、初回の boto3 のクライアントの作成は `create_ssm_client`・`create_dynamodb_client` という span になります。
+- Lambda の計装が付ける属性のうち、API Gateway のホスト（`net.host.name`）、AWS のアカウント ID（`cloud.account.id`）、関数の ARN（`cloud.resource_id`）は、Collector で消してから送ります（`attributes/redact`・`resource/redact`）。
 - メトリクスは累積値（cumulative）で送ります。Lambda の実行環境が作り直されるとカウンタは 0 から数え直すので、Grafana では `increase()` や `rate()` で集計してください。
 
 ### Grafana Cloud の認証情報
