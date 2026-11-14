@@ -1,12 +1,14 @@
 """Lambda function for LINE notification service."""
 
 import base64
+import hashlib
 import json
 import logging
 import os
 import time
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 
@@ -152,7 +154,12 @@ def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list
     return [messages[i : i + batch_size] for i in range(0, len(messages), batch_size)]
 
 
-def _post_line_api(path: str, payload: dict[str, Any], channel_token: str) -> LambdaResponse:
+def _post_line_api(
+    path: str,
+    payload: dict[str, Any],
+    channel_token: str,
+    extra_headers: dict[str, str] | None = None,
+) -> LambdaResponse:
     """POST a JSON payload to the LINE Messaging API.
 
     LINE API のエラーは statusCode と {"error": reason} に変換して返す（例外にはしない）。
@@ -162,6 +169,7 @@ def _post_line_api(path: str, payload: dict[str, Any], channel_token: str) -> La
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {channel_token}",
+        **(extra_headers or {}),
     }
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
@@ -181,17 +189,31 @@ def _post_line_api(path: str, payload: dict[str, Any], channel_token: str) -> La
 
 
 @_tracer.start_as_current_span("push_messages")
-def push_messages(messages: list[LineMessage], channel_token: str, user_id: str) -> LambdaResponse:
-    """Send messages to LINE Messaging API."""
+def push_messages(
+    messages: list[LineMessage], channel_token: str, user_id: str, retry_key: str | None = None
+) -> LambdaResponse:
+    """Send messages to LINE Messaging API.
+
+    retry_key を渡すと X-Line-Retry-Key ヘッダーに付ける。同じ再送キーのリクエストを
+    LINE がすでに受け付けていたときは、LINE は送信せずに 409 を返す。
+    """
     # このバッチ（最大 batch_size 件）に含まれるメッセージ数。リクエスト全体の総数ではない。
     trace.get_current_span().set_attribute("line.batch_message_count", len(messages))
 
     logger.info("Sending %d message(s) to LINE API (user_id=%s)", len(messages), user_id)
     result = _post_line_api(
-        "/v2/bot/message/push", {"to": user_id, "messages": messages}, channel_token
+        "/v2/bot/message/push",
+        {"to": user_id, "messages": messages},
+        channel_token,
+        {"X-Line-Retry-Key": retry_key} if retry_key else None,
     )
     # エラーのときは _post_line_api が 4xx / 5xx を返す
-    status = "success" if 200 <= result["statusCode"] < 300 else "error"
+    if 200 <= result["statusCode"] < 300:
+        status = "success"
+    elif result["statusCode"] == 409 and retry_key:
+        status = "duplicate"
+    else:
+        status = "error"
     _notification_counter.add(len(messages), {"status": status})
     return result
 
@@ -285,13 +307,24 @@ _ssm_client: Any = None
 _ssm_cache: dict[str, tuple[str, float]] = {}
 
 
-def _get_ssm_client() -> Any:
-    """Return a cached SSM client (boto3 is provided by the Lambda runtime)."""
-    global _ssm_client
-    if _ssm_client is None:
+def _create_boto3_client(service: str) -> Any:
+    """Create a boto3 client in its own span (boto3 is provided by the Lambda runtime).
+
+    初回の import boto3 とクライアントの作成は、コールドスタートでは数秒かかることがある。
+    それを呼び出し元の span（SSM や DynamoDB の処理）の時間と区別できるよう、別の span にする。
+    クライアントはキャッシュするので、この span はコールドスタートのあとの最初の呼び出しでだけ出る。
+    """
+    with _tracer.start_as_current_span(f"create_{service}_client"):
         import boto3
 
-        _ssm_client = boto3.client("ssm")
+        return boto3.client(service)
+
+
+def _get_ssm_client() -> Any:
+    """Return a cached SSM client."""
+    global _ssm_client
+    if _ssm_client is None:
+        _ssm_client = _create_boto3_client("ssm")
     return _ssm_client
 
 
@@ -372,6 +405,79 @@ def load_line_credentials() -> LineCredentials:
     return LineCredentials(values["channel_token"], values["user_id"])
 
 
+# 同じリクエストの再送とみなす時間。この時間内に同じリクエストが届いたら、同じ再送キー
+# （X-Line-Retry-Key）で LINE に送り、送信済みのバッチは LINE が送らずに 409 を返す。
+# この時間を過ぎた再送は新しい再送キーで送るので、別のメッセージとして届く。
+RETRY_KEY_TTL_SECONDS = 15 * 60
+
+_dynamodb_client: Any = None
+
+
+class RetryKeyError(Exception):
+    """Raised when a retry key cannot be stored in or read from DynamoDB."""
+
+
+def _get_dynamodb_client() -> Any:
+    """Return a cached DynamoDB client."""
+    global _dynamodb_client
+    if _dynamodb_client is None:
+        _dynamodb_client = _create_boto3_client("dynamodb")
+    return _dynamodb_client
+
+
+def _batch_key(user_id: str, messages: list[str], batch_index: int) -> str:
+    """Return the key that identifies one batch of one request.
+
+    送り先、リクエストのメッセージ全体、バッチの位置から作る。同じ内容のバッチが
+    1つのリクエストに2回あっても、別のバッチとして扱う。リクエスト元は含めない
+    （受け取る人は同じなので、別のシステムからの同じリクエストも重複として扱う）。
+    """
+    payload = json.dumps([user_id, messages, batch_index], ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+@_tracer.start_as_current_span("get_retry_key")
+def get_retry_key(table_name: str, batch_key: str) -> str:
+    """Return the retry key for the batch, creating one if none is valid.
+
+    条件付き書き込みで、有効期限内の再送キーがなければ新しい再送キーを書く。
+    すでにあれば（再送や、別の実行環境での同時の処理）、その再送キーを返す。
+    DynamoDB の TTL による削除は遅れることがあるので、期限切れは expires_at で判定する。
+    """
+    now = int(time.time())
+    retry_key = str(uuid.uuid4())
+
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        _get_dynamodb_client().put_item(
+            TableName=table_name,
+            Item={
+                "pk": {"S": batch_key},
+                "retry_key": {"S": retry_key},
+                "expires_at": {"N": str(now + RETRY_KEY_TTL_SECONDS)},
+            },
+            ConditionExpression="attribute_not_exists(pk) OR expires_at <= :now",
+            ExpressionAttributeValues={":now": {"N": str(now)}},
+            ReturnValuesOnConditionCheckFailure="ALL_OLD",
+        )
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "Unknown")
+        if code != "ConditionalCheckFailedException":
+            raise RetryKeyError(f"Failed to store retry key in DynamoDB ({code})") from e
+        existing = e.response.get("Item", {}).get("retry_key", {}).get("S")
+        if not existing:
+            raise RetryKeyError("Retry key not found in DynamoDB item") from e
+        logger.info("Reusing retry key for a resent batch")
+        trace.get_current_span().set_attribute("line.retry_key_reused", True)
+        return existing
+    except BotoCoreError as e:
+        raise RetryKeyError(f"Failed to store retry key in DynamoDB ({type(e).__name__})") from e
+
+    trace.get_current_span().set_attribute("line.retry_key_reused", False)
+    return retry_key
+
+
 def deliver_messages(
     raw_messages: list[str], channel_token: str, user_id: str, dry_run: bool = False
 ) -> LambdaResponse:
@@ -420,13 +526,27 @@ def deliver_messages(
     _batch_count_histogram.record(len(batches))
     logger.info("Sending %d message(s) in %d batch(es)", len(messages), len(batches))
 
+    # 未設定のとき（ローカルで DynamoDB を使わないときなど）は再送キーを付けない
+    table_name = os.environ.get("RETRY_KEY_TABLE_NAME")
     for i, batch in enumerate(batches, start=1):
+        retry_key = None
+        if table_name:
+            try:
+                retry_key = get_retry_key(table_name, _batch_key(user_id, messages, i))
+            except RetryKeyError as e:
+                logger.error("Batch %d: %s", i, e)
+                return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
         logger.debug("Sending batch %d/%d", i, len(batches))
-        result = push_messages(batch, channel_token, user_id)
+        result = push_messages(batch, channel_token, user_id, retry_key=retry_key)
+        if result["statusCode"] == 409 and retry_key:
+            # 同じ再送キーのリクエストを LINE がすでに受け付けている（送信済み）
+            logger.info("Batch %d/%d was already sent, skipping", i, len(batches))
+            continue
         if result["statusCode"] != 200:
             logger.error("Batch %d failed: %s", i, result)
             return result
 
+    # 再送でも、最初のリクエストと同じレスポンスを返す
     logger.info("All messages sent successfully")
     return {
         "statusCode": 200,

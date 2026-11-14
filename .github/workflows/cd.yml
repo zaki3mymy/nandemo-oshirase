@@ -15,6 +15,11 @@ on:
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
+# 同じブランチの CD は同時に動かさず、1本ずつ順番に動かす
+concurrency:
+  group: cd-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: "ap-northeast-1"
 

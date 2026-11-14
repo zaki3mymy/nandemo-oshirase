@@ -31,4 +31,7 @@ module "notify" {
   line_parameter_prefix = var.line_parameter_prefix
   log_level             = var.log_level
   stage_name            = "dev"
+
+  # Grafana Cloud に送るための Authorization ヘッダーの値を置いた SSM パラメータ（このリポジトリの外で作る）
+  grafana_otlp_auth_parameter = "/app/grafana/dev/otlp_auth"
 }
