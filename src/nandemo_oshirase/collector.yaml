@@ -1,8 +1,6 @@
 # Lambda の Collector レイヤー（opentelemetry-lambda のコミュニティ製）の設定。
 # アプリ（Python 計装レイヤー）から OTLP で受けて、Grafana Cloud に otlphttp で送る。
 # 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/main.tf）。
-# decouple processor で、Lambda の応答を返してから送るようにする（実行の終わりに Grafana Cloud への
-# 送信を待たない）。送り終わるまで実行環境は止められない。
 receivers:
   otlp:
     protocols:
@@ -10,8 +8,17 @@ receivers:
         endpoint: localhost:4317
       http:
         endpoint: localhost:4318
+  # Lambda の Telemetry API から、実行環境の初期化（コールドスタート）の開始と終了を受け取り、
+  # "init <関数名>" という span（faas.coldstart=true）を作る。トレースだけで使う
+  telemetryapi:
 
 processors:
+  # telemetryapi が作った初期化の span を、そのとき呼ばれた実行（ハンドラー）と同じトレースに入れる。
+  # 実行の span を faas.invocation_id で見分け、初期化の span を faas.coldstart で見分けるので、
+  # アプリの span に faas.coldstart を付けてはいけない
+  coldstart:
+  # Lambda の応答を返してから送るようにする（実行の終わりに Grafana Cloud への送信を待たない）。
+  # 送り終わるまで実行環境は止められない。パイプラインの最後に置く
   decouple:
 
 exporters:
@@ -23,8 +30,8 @@ exporters:
 service:
   pipelines:
     traces:
-      receivers: [otlp]
-      processors: [decouple]
+      receivers: [otlp, telemetryapi]
+      processors: [coldstart, decouple]
       exporters: [otlphttp/grafana_cloud]
     metrics:
       receivers: [otlp]
