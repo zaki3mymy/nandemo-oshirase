@@ -48,6 +48,38 @@
           "callbacks": []
         },
         {
+          "uuid": "5d0c7a52-2f4e-4a8e-9b1d-7c3e6f0a9b21",
+          "body": "{\"message\": \"The retry key is already accepted\"}",
+          "latency": 0,
+          "statusCode": 409,
+          "label": "Simulated already-accepted retry key when request body contains __already_sent__",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [
+            {
+              "target": "body",
+              "modifier": "",
+              "value": ".*__already_sent__.*",
+              "invert": false,
+              "operator": "regex"
+            }
+          ],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
           "uuid": "3089075d-3f1c-457c-ae8e-b7759ad6ccd2",
           "body": "{}",
           "latency": 0,

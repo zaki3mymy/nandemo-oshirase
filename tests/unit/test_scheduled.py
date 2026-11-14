@@ -61,7 +61,10 @@ class TestScheduledSuccess:
             "body": json.dumps({"message": "Successfully sent 1 message(s)"}),
         }
         mock_push.assert_called_once_with(
-            [{"type": "text", "text": "明日は燃えるゴミです"}], "test_token", "test_user"
+            [{"type": "text", "text": "明日は燃えるゴミです"}],
+            "test_token",
+            "test_user",
+            retry_key=None,
         )
 
     def test_records_schedule_arn_on_span(self, span_exporter):

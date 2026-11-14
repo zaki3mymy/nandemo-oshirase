@@ -67,6 +67,41 @@ resource "aws_iam_role_policy" "lambda_read_line_credentials" {
   })
 }
 
+# 同じリクエストの再送で使う、LINE の再送キー（X-Line-Retry-Key）を置くテーブル。
+# 項目は 15 分で期限切れになる（期限切れの判定は Lambda が expires_at で行い、TTL は掃除のため）
+resource "aws_dynamodb_table" "retry_keys" {
+  name         = "${local.name_prefix}-retry-keys"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_retry_keys" {
+  name = "${local.name_prefix}-retry-keys"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # 条件付きの PutItem で、既存の項目を ReturnValuesOnConditionCheckFailure で読む
+        Action   = ["dynamodb:PutItem", "dynamodb:GetItem"]
+        Effect   = "Allow"
+        Resource = aws_dynamodb_table.retry_keys.arn
+      }
+    ]
+  })
+}
+
 # Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
@@ -97,6 +132,7 @@ resource "aws_lambda_function" "notify" {
     variables = {
       LINE_CHANNEL_TOKEN_PARAM           = local.line_channel_token_parameter
       LINE_USER_ID_PARAM                 = local.line_user_id_parameter
+      RETRY_KEY_TABLE_NAME               = aws_dynamodb_table.retry_keys.name
       LOG_LEVEL                          = var.log_level
       AWS_LAMBDA_EXEC_WRAPPER            = "/opt/otel-handler"
       OPENTELEMETRY_COLLECTOR_CONFIG_URI = "/var/task/collector.yaml"

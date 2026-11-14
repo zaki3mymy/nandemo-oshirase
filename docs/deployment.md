@@ -15,6 +15,10 @@ API Gateway がログを CloudWatch Logs に書くためのロールは、AWS �
 | `AWS_ROLE_ARN` | OIDC認証用のIAMロールARN |
 | `TERRAFORM_STATE_BUCKET` | Terraform state用S3バケット名 |
 
+## デプロイ用の IAM ロールに必要な権限
+
+`AWS_ROLE_ARN` のロールには、Terraform が作るリソースを管理する権限が必要です。[再送](../README.md#再送冪等性)のために DynamoDB のテーブル（`{env}-nandemo-oshirase-retry-keys`）を作ります。ロールの権限を絞っている場合は、`dynamodb:CreateTable`、`DescribeTable`、`UpdateTable`、`DeleteTable`、`UpdateTimeToLive`、`DescribeTimeToLive`、`DescribeContinuousBackups`、`ListTagsOfResource`、`TagResource`、`UntagResource` も許可してください。
+
 ## LINE の認証情報（SSM Parameter Store）
 
 LINE のチャネルアクセストークンと通知先のユーザーIDは、環境ごとに SSM Parameter Store の SecureString（AWS管理キー `aws/ssm`）に置き、Lambda が実行時に読み込みます。値は Terraform の state、Lambda の環境変数、GitHub の Secrets のいずれにも置きません。パラメータは Terraform の外で作成してください。
