@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -863,6 +863,10 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+dynamodb = [
+    { name = "docker" },
+    { name = "py-partiql-parser" },
+]
 server = [
     { name = "antlr4-python3-runtime" },
     { name = "aws-xray-sdk" },
@@ -891,7 +895,6 @@ wheels = [
 [[package]]
 name = "nandemo-oshirase"
 source = { editable = "." }
-default-groups = ["cli", "dev"]
 dependencies = [
     { name = "opentelemetry-distro" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -905,7 +908,7 @@ cli = [
 ]
 dev = [
     { name = "hypothesis" },
-    { name = "moto", extra = ["server"] },
+    { name = "moto", extra = ["dynamodb", "server"] },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -925,7 +928,7 @@ requires-dist = [
 cli = [{ name = "boto3", specifier = ">=1.43.123" }]
 dev = [
     { name = "hypothesis", specifier = ">=6.170.14" },
-    { name = "moto", extras = ["iam", "scheduler", "server"], specifier = ">=5.2.5" },
+    { name = "moto", extras = ["dynamodb", "iam", "scheduler", "server"], specifier = ">=5.2.5" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },

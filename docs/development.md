@@ -26,6 +26,8 @@ cp .env.example .env.local
 
 `podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）、OTelのテレメトリ収集・可視化スタック（otel-collector / Jaeger / Prometheus / Grafana）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
 
+[再送](../README.md#再送冪等性)の再送キーは DynamoDB Local（`dynamodb`、`http://localhost:8000`）に保存します。テーブルは `dynamodb-init` が起動時に作ります（データはメモリにだけあり、止めると消えます）。stub の push API は、ボディに `__error__` が含まれると `500` を、`__already_sent__` が含まれると `409`（送信済みの再送キー）を返します。
+
 ```bash
 podman-compose up --build
 ```

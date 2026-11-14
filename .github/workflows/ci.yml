@@ -98,7 +98,7 @@ jobs:
         run: cp .env.example .env.local
 
       - name: Start local stack
-        run: docker compose -f podman-compose.yml up -d --build stub otel-collector jaeger prometheus lambda
+        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus lambda
 
       - name: Wait for services to be healthy
         run: |

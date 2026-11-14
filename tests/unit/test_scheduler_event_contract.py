@@ -57,6 +57,7 @@ def test_cli_input_is_delivered_by_scheduled_handler():
         ],
         "test_token",
         "test_user",
+        retry_key=None,
     )
 
 

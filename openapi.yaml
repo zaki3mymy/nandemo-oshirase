@@ -54,7 +54,10 @@ paths:
                   dry_run: true
       responses:
         "200":
-          description: Successfully sent (dry run のときは送信せずに成功を返す)
+          description: >-
+            Successfully sent (dry run のときは送信せずに成功を返す)。
+            同じリクエスト（メッセージの内容と順番が同じ）を15分以内に再送したときは、
+            送信済みのメッセージは送らずに同じレスポンスを返す
           content:
             application/json:
               schema:
