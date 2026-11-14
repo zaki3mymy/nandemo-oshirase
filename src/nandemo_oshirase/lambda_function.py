@@ -307,13 +307,24 @@ _ssm_client: Any = None
 _ssm_cache: dict[str, tuple[str, float]] = {}
 
 
-def _get_ssm_client() -> Any:
-    """Return a cached SSM client (boto3 is provided by the Lambda runtime)."""
-    global _ssm_client
-    if _ssm_client is None:
+def _create_boto3_client(service: str) -> Any:
+    """Create a boto3 client in its own span (boto3 is provided by the Lambda runtime).
+
+    初回の import boto3 とクライアントの作成は、コールドスタートでは数秒かかることがある。
+    それを呼び出し元の span（SSM や DynamoDB の処理）の時間と区別できるよう、別の span にする。
+    クライアントはキャッシュするので、この span はコールドスタートのあとの最初の呼び出しでだけ出る。
+    """
+    with _tracer.start_as_current_span(f"create_{service}_client"):
         import boto3
 
-        _ssm_client = boto3.client("ssm")
+        return boto3.client(service)
+
+
+def _get_ssm_client() -> Any:
+    """Return a cached SSM client."""
+    global _ssm_client
+    if _ssm_client is None:
+        _ssm_client = _create_boto3_client("ssm")
     return _ssm_client
 
 
@@ -407,12 +418,10 @@ class RetryKeyError(Exception):
 
 
 def _get_dynamodb_client() -> Any:
-    """Return a cached DynamoDB client (boto3 is provided by the Lambda runtime)."""
+    """Return a cached DynamoDB client."""
     global _dynamodb_client
     if _dynamodb_client is None:
-        import boto3
-
-        _dynamodb_client = boto3.client("dynamodb")
+        _dynamodb_client = _create_boto3_client("dynamodb")
     return _dynamodb_client
 
 

@@ -220,3 +220,17 @@ class TestGetSsmClient:
             client_factory.assert_called_once_with("ssm")
         finally:
             lambda_function._ssm_client = None
+
+    def test_client_is_created_in_its_own_span(self):
+        # コールドスタートでのクライアントの作成を、SSM の処理と区別できるよう別の span にする
+        lambda_function._ssm_client = None
+        try:
+            with (
+                patch("boto3.client"),
+                patch.object(lambda_function, "_tracer") as tracer,
+            ):
+                lambda_function._get_ssm_client()
+                lambda_function._get_ssm_client()
+            tracer.start_as_current_span.assert_called_once_with("create_ssm_client")
+        finally:
+            lambda_function._ssm_client = None
