@@ -17,9 +17,6 @@ oshirase = "oshirase_cli.main:main"
 [tool.uv]
 default-groups = ["dev", "cli"]
 # uv のバージョン。CI（setup-uv）もローカルもこの範囲の uv を使う。
-# uv のバージョンが変わると uv.lock の書き方（revision）が変わることがあるため、マイナーバージョンでそろえる。
-# 下限は Dependabot が使う uv（今は 0.13.7）も満たすようにする（満たさないと Dependabot の uv の更新が失敗する）。
-# 0.14 に上げるときは、Dependabot の uv が 0.14 に対応してから上げる
 required-version = ">=0.13,<0.14"
 
 [tool.pytest.ini_options]
