@@ -17,8 +17,7 @@ oshirase = "oshirase_cli.main:main"
 [tool.uv]
 default-groups = ["dev", "cli"]
 # uv のバージョン。CI（setup-uv）もローカルもこの範囲の uv を使う。
-# uv のバージョンが変わると uv.lock の書き方（revision）が変わることがあるため、そろえる
-required-version = ">=0.13.8,<0.14"
+required-version = ">=0.13,<0.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
