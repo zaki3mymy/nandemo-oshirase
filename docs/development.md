@@ -2,6 +2,8 @@
 
 PR のタイトルの付け方とリリースの流れは [release.md](release.md) を見てください。
 
+uv のバージョンは `pyproject.toml` の `[tool.uv] required-version` の範囲のものを使ってください（CI も同じ範囲の uv を使います）。古いときは `uv self update` で上げます。
+
 ```bash
 # 依存関係のインストール
 uv sync --dev
