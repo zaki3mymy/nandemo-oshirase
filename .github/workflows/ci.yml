@@ -161,6 +161,10 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh "$(git describe --tags)"
 
+      - name: Build the urllib instrumentation layer
+        # tf/modules/main.tf の aws_lambda_layer_version.otel_urllib が使う zip（dist/otel-urllib-layer.zip）を作る
+        run: python3 scripts/build-otel-urllib-layer.py
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
