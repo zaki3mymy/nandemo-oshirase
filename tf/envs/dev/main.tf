@@ -32,6 +32,9 @@ module "notify" {
   log_level             = var.log_level
   stage_name            = "dev"
 
+  # scripts/build-otel-urllib-layer.py の出力先
+  otel_urllib_layer_zip_path = "${path.root}/../../../dist/otel-urllib-layer.zip"
+
   # Grafana Cloud に送るための Authorization ヘッダーの値を置いた SSM パラメータ（このリポジトリの外で作る）
   grafana_otlp_auth_parameter = "/app/grafana/dev/otlp_auth"
 }
