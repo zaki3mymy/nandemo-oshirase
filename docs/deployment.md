@@ -52,6 +52,14 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 - Lambda の計装が付ける属性のうち、API Gateway のホスト（`net.host.name`）、AWS のアカウント ID（`cloud.account.id`）、関数の ARN（`cloud.resource_id`）は、Collector で消してから送ります（`attributes/redact`・`resource/redact`）。
 - メトリクスは累積値（cumulative）で送ります。Lambda の実行環境が作り直されるとカウンタは 0 から数え直すので、Grafana では `increase()` や `rate()` で集計してください。
 
+### urllib の計装のレイヤー
+
+コミュニティの Python計装レイヤーには urllib の計装（`opentelemetry-instrumentation-urllib`）が入っていません。urllib の計装が無いと、LINE API の呼び出しの span が出ません。そのため、urllib の計装だけを入れたレイヤーを自前で作り、コミュニティのレイヤーに重ねています（`tf/modules/main.tf` の `aws_lambda_layer_version.otel_urllib`）。
+
+- zip は `scripts/build-otel-urllib-layer.py` で作ります（CI の terraform-plan と CD で、Terraform の前に実行します）。依存するパッケージはコミュニティのレイヤーにあるので、urllib の計装だけを `--no-deps` で入れます。同じバージョンなら zip のハッシュは変わらないので、レイヤーは作り直されません。
+- バージョンは `uv.lock` のものを使います。`pyproject.toml` の OTel の依存は、コミュニティの Python計装レイヤー（タグの `requirements.txt`）と同じバージョンに `==` で固定しています（ローカルと本番のバージョンをそろえるため）。Dependabot では OTel のパッケージを上げません（`.github/dependabot.yml` の `ignore`）。
+- コミュニティのレイヤーの新しいバージョンは、`.github/workflows/update-otel-lambda-layers.yml` が見つけて、`tf/modules/main.tf` の ARN と `pyproject.toml`・`uv.lock` の OTel の依存を一緒に上げる PR を develop に作ります。opentelemetry-lambda のリリースは feed-release-invoke-workflow の `repository_dispatch`（`otel-lambda-release`）で知り、取りこぼしに備えて週1回の `schedule` でも確認します。
+
 ### Grafana Cloud の認証情報
 
 Grafana Cloud に送るための Authorization ヘッダーの値（`Basic <base64(スタックの ID:トークン)>`）は、環境ごとに SSM Parameter Store の SecureString（AWS管理キー `aws/ssm`）に置かれている前提です。パラメータはこのリポジトリの外で作成・管理します。

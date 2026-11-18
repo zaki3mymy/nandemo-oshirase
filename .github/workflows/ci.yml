@@ -161,16 +161,25 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh "$(git describe --tags)"
 
+      - name: Build the urllib instrumentation layer
+        # tf/modules/main.tf の aws_lambda_layer_version.otel_urllib が使う zip（dist/otel-urllib-layer.zip）を作る
+        run: python3 scripts/build-otel-urllib-layer.py
+
       - name: Configure AWS credentials
+        id: aws
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-1
+          # terraform の出力の ARN に出るアカウント ID を、ログでマスクする
+          mask-aws-account-id: true
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "~1.17.0"
+          # terraform output -raw の値をそのまま使うため、ラッパーを無効にする
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: |
@@ -179,6 +188,20 @@ jobs:
             -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
             -backend-config="key=${{ steps.config.outputs.state_key }}" \
             -backend-config="region=ap-northeast-1"
+
+      # API Gateway の ID（エンドポイントのホスト名）は、terraform の出力（Outputs など）に出るのでログでマスクする。
+      # 既存の state の api_endpoint から取る（初めてのデプロイでは state が無いので、何もしない）
+      - name: Mask the API Gateway ID
+        id: mask
+        run: |
+          cd ${{ steps.config.outputs.tf_dir }}
+          endpoint=$(terraform output -raw api_endpoint 2>/dev/null || true)
+          api_id=${endpoint#https://}
+          api_id=${api_id%%.*}
+          if [[ -n "$endpoint" && "$api_id" != "$endpoint" ]]; then
+            echo "::add-mask::$api_id"
+            echo "api_id=$api_id" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Terraform Plan
         id: plan
@@ -197,12 +220,19 @@ jobs:
           PLAN_FILE: ${{ runner.temp }}/plan.txt
           PLAN_OUTCOME: ${{ steps.plan.outcome }}
           TF_ENV: ${{ steps.config.outputs.env }}
+          AWS_ACCOUNT_ID: ${{ steps.aws.outputs.aws-account-id }}
+          API_ID: ${{ steps.mask.outputs.api_id }}
         with:
           script: |
             const fs = require('fs')
             let plan = fs.existsSync(process.env.PLAN_FILE)
               ? fs.readFileSync(process.env.PLAN_FILE, 'utf8')
               : '(plan の出力がありません)'
+
+            // add-mask はコメントには効かないので、アカウント ID と API Gateway の ID を *** に置き換える
+            for (const v of [process.env.AWS_ACCOUNT_ID, process.env.API_ID].filter((v) => v)) {
+              plan = plan.split(v).join('***')
+            }
 
             // 公開リポジトリのコメントにアカウントIDやリソースのIDが並ばないよう、
             // 既存リソースの読み込みの行（Refreshing state... [id=...] など）を除き、
@@ -235,9 +265,35 @@ jobs:
               ].join('\n')
             }
 
-            await github.rest.issues.createComment({
+            // このワークフローのコメントだと分かる目印（画面には表示されない）。環境ごとに分ける
+            const marker = `<!-- terraform-plan:${process.env.TF_ENV} -->`
+            body = `${marker}\n${body}`
+
+            // 新しくコメントし、最新の plan をいつも一番下に出す
+            const { data: created } = await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: body,
             })
+
+            // それより前の plan のコメントを Outdated として折りたたむ（人やほかのコメントには触らない）
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            })
+            for (const c of comments) {
+              if (c.id === created.id) continue
+              if (c.user?.login !== 'github-actions[bot]') continue
+              if (!c.body?.startsWith(marker)) continue
+              await github.graphql(
+                `mutation($id: ID!) {
+                  minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) {
+                    minimizedComment { isMinimized }
+                  }
+                }`,
+                { id: c.node_id },
+              )
+            }

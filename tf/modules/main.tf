@@ -102,6 +102,18 @@ resource "aws_iam_role_policy" "lambda_retry_keys" {
   })
 }
 
+# urllib の計装（opentelemetry-instrumentation-urllib）だけを入れたレイヤー。
+# コミュニティの Python 計装レイヤーには urllib の計装が無いため、自前で足す（LINE API の呼び出しの span を出す）。
+# zip は scripts/build-otel-urllib-layer.py で作る（CI の terraform-plan と CD で、terraform の前に実行する）。
+# 同じバージョンなら zip のハッシュは変わらないので、レイヤーは作り直されない
+resource "aws_lambda_layer_version" "otel_urllib" {
+  layer_name          = "${local.name_prefix}-otel-urllib"
+  description         = "opentelemetry-instrumentation-urllib for ${local.name_prefix}"
+  filename            = var.otel_urllib_layer_zip_path
+  source_code_hash    = filebase64sha256(var.otel_urllib_layer_zip_path)
+  compatible_runtimes = ["python3.13"]
+}
+
 # Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
@@ -117,9 +129,14 @@ resource "aws_lambda_function" "notify" {
   # （layer-python/<version>・layer-collector/<version> のタグ）
   # コレクターは OTLP を受けて、Grafana Cloud に otlphttp で送る（collector.yaml）
   # AWS_LAMBDA_EXEC_WRAPPER（下記environment）でPython計装レイヤーがlambda_handlerをラップする
+  # 新しいバージョンが出たら、.github/workflows/update-otel-lambda-layers.yml がこの ARN と
+  # pyproject.toml・uv.lock の OTel の依存を一緒に上げる PR を作る（ローカルと本番をそろえる。
+  # 自前の urllib のレイヤーも uv.lock のバージョンで作る）。手で上げるときも、両方を同じバージョンにする
+  # 自前の urllib のレイヤーは、コミュニティのレイヤーのあとに重ねる（どれも /opt/python に展開される）
   layers = [
-    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_21_0:1",
+    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_22_0:1",
     "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-collector-amd64-0_24_0:1",
+    aws_lambda_layer_version.otel_urllib.arn,
   ]
 
   # X-Ray にはトレースを送らない（Grafana Cloud に送る）。

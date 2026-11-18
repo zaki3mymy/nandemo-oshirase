@@ -42,3 +42,8 @@ variable "grafana_otlp_auth_parameter" {
   description = "Grafana Cloud に OTLP で送るための Authorization ヘッダーの値を置いた SSM パラメータの名前（例: /app/grafana/prod/otlp_auth）"
   type        = string
 }
+
+variable "otel_urllib_layer_zip_path" {
+  description = "Path to the zip of the Lambda layer with opentelemetry-instrumentation-urllib (built by scripts/build-otel-urllib-layer.py)"
+  type        = string
+}

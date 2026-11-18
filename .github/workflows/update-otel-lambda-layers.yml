@@ -1,0 +1,32 @@
+name: Update OTel Lambda layers
+
+# OTel のコミュニティの Lambda レイヤー（Python 計装・Collector）の新しいバージョンが出ていたら、
+# tf/modules/main.tf のレイヤーの ARN と pyproject.toml・uv.lock の OTel の依存を上げる PR を develop に作る。
+# Dependabot はレイヤーの ARN を見ないので、その代わり。
+#
+# - repository_dispatch: opentelemetry-lambda のリリースを feed-release-invoke-workflow が知らせる
+#   （どの言語のレイヤーのリリースでも来るが、再利用ワークフローが最新のタグを見て、変わっていなければ何もしない）
+# - schedule: 知らせを取りこぼしたときのための、週1回の確認
+# - workflow_dispatch: 手で確認する
+on:
+  repository_dispatch:
+    types: [otel-lambda-release]
+  schedule:
+    # 毎週月曜 9:23（JST）
+    - cron: "23 0 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: update-otel-lambda-layers
+
+jobs:
+  update:
+    permissions:
+      contents: read
+    uses: zaki3mymy/actions/.github/workflows/update-otel-lambda-layers.yml@main
+    with:
+      terraform-files: tf/modules/main.tf
+      base: develop
+    secrets:
+      PR_APP_CLIENT_ID: ${{ secrets.DEPENDENCY_UPDATER_APP_CLIENT_ID }}
+      PR_APP_PRIVATE_KEY: ${{ secrets.DEPENDENCY_UPDATER_APP_PRIVATE_KEY }}
