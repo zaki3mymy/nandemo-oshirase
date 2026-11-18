@@ -82,10 +82,13 @@ jobs:
           fi
 
       - name: Configure AWS credentials
+        id: aws
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          # terraform の出力の ARN に出るアカウント ID を、ログでマスクする
+          mask-aws-account-id: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -137,6 +140,19 @@ jobs:
             -backend-config="key=${{ steps.config.outputs.state_key }}" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
+      # API Gateway の ID（エンドポイントのホスト名）は、terraform の出力（Outputs など）に出るのでログでマスクする。
+      # 既存の state の api_endpoint から取る（初めてのデプロイでは state が無いので、何もしない）
+      - name: Mask the API Gateway ID
+        run: |
+          cd ${{ steps.config.outputs.tf_dir }}
+          endpoint=$(terraform output -raw api_endpoint 2>/dev/null || true)
+          api_id=${endpoint#https://}
+          api_id=${api_id%%.*}
+          if [[ -n "$endpoint" && "$api_id" != "$endpoint" ]]; then
+            echo "::add-mask::$api_id"
+            echo "api_id=$api_id" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Terraform Apply
         run: |
           cd ${{ steps.config.outputs.tf_dir }}
@@ -151,6 +167,7 @@ jobs:
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
+          echo "::add-mask::$API_KEY"
 
           HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST "$API_ENDPOINT" \
             -H "x-api-key: $API_KEY" \
