@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 
@@ -46,6 +47,8 @@ class ScheduledEvent(TypedDict):
     source: str
     messages: list[str]
     schedule_arn: NotRequired[str]
+    # True のときは LINE に送信しない（CD の発火テスト用。oshirase add --dry-run で作る）
+    dry_run: NotRequired[bool]
 
 
 class LambdaResponse(TypedDict):
@@ -77,7 +80,7 @@ class NotifyRequest:
     dry_run: bool = False
 
 
-def is_dry_run(data: dict[str, Any]) -> bool:
+def is_dry_run(data: Mapping[str, Any]) -> bool:
     """Return True only if ``dry_run`` is the JSON boolean ``true``.
 
     文字列の "true" などは dry run として扱わない。
@@ -580,7 +583,7 @@ def handle_scheduled(event: ScheduledEvent) -> LambdaResponse:
     if not isinstance(raw_messages, list) or not all(isinstance(m, str) for m in raw_messages):
         raise ScheduledNotificationError("Scheduled event must have 'messages' as a list of str")
 
-    result = deliver_messages(raw_messages, channel_token, user_id)
+    result = deliver_messages(raw_messages, channel_token, user_id, dry_run=is_dry_run(event))
     if result["statusCode"] != 200:
         raise ScheduledNotificationError(result["body"])
     return result

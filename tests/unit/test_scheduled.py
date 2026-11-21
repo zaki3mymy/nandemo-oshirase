@@ -111,6 +111,60 @@ class TestScheduledSuccess:
         mock_webhook.assert_not_called()
 
 
+class TestScheduledDryRun:
+    def test_validates_without_sending(self, span_exporter):
+        event: Any = {**make_event(["明日は燃えるゴミです"]), "dry_run": True}
+
+        with patch.dict(os.environ, ENV):
+            with (
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+
+                result = lambda_handler(event, None)
+
+        assert result == {
+            "statusCode": 200,
+            "body": json.dumps({"message": "Dry run: would send 1 message(s) in 1 batch(es)"}),
+        }
+        mock_push.assert_not_called()
+        mock_validate.assert_called_once_with(
+            [{"type": "text", "text": "明日は燃えるゴミです"}], "test_token"
+        )
+        spans = {span.name: span for span in span_exporter.get_finished_spans()}
+        assert (spans["handle_scheduled"].attributes or {})["notify.dry_run"] is True
+
+    def test_raises_when_validation_fails(self):
+        event: Any = {**make_event(["hello"]), "dry_run": True}
+
+        with patch.dict(os.environ, ENV):
+            with patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate:
+                mock_validate.return_value = {
+                    "statusCode": 401,
+                    "body": json.dumps({"error": "Unauthorized"}),
+                }
+
+                with pytest.raises(ScheduledNotificationError, match="Unauthorized"):
+                    lambda_handler(event, None)
+
+    @pytest.mark.parametrize("value", ["true", 1, False])
+    def test_sends_unless_boolean_true(self, value):
+        event: Any = {**make_event(["hello"]), "dry_run": value}
+
+        with patch.dict(os.environ, ENV):
+            with (
+                patch("nandemo_oshirase.lambda_function.push_messages") as mock_push,
+                patch("nandemo_oshirase.lambda_function.validate_push_messages") as mock_validate,
+            ):
+                mock_push.return_value = {"statusCode": 200, "body": "{}"}
+
+                lambda_handler(event, None)
+
+        mock_push.assert_called_once()
+        mock_validate.assert_not_called()
+
+
 class TestScheduledFailure:
     def test_raises_when_push_fails(self):
         event = make_event(["hello"])
