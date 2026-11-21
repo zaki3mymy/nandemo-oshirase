@@ -79,45 +79,45 @@ class TestParseDays:
 class TestBuildExpression:
     @pytest.mark.parametrize(("short", "full", "ja", "num", "name"), WEEKDAYS, ids=WEEKDAY_IDS)
     def test_weekly_every_weekday(self, short, full, ja, num, name):
-        expr = cron.build_expression("21:00", weekly=short)
+        expr = cron.build_cron_expression("21:00", weekly=short)
         assert expr == f"cron(0 21 ? * {name} *)"
         assert cron.describe(expr) == f"毎週{ja}曜 21:00"
 
     @pytest.mark.parametrize(("short", "full", "ja", "num", "name"), WEEKDAYS, ids=WEEKDAY_IDS)
     def test_nth_every_weekday(self, short, full, ja, num, name):
-        expr = cron.build_expression("21:00", weekly=ja, nth=3)
+        expr = cron.build_cron_expression("21:00", weekly=ja, nth=3)
         assert expr == f"cron(0 21 ? * {num}#3 *)"
         assert cron.describe(expr) == f"毎月第3{ja}曜 21:00"
 
     def test_daily(self):
-        assert cron.build_expression("07:30", daily=True) == "cron(30 7 * * ? *)"
+        assert cron.build_cron_expression("07:30", daily=True) == "cron(30 7 * * ? *)"
 
     def test_weekly(self):
-        assert cron.build_expression("21:00", weekly="mon,thu") == "cron(0 21 ? * MON,THU *)"
+        assert cron.build_cron_expression("21:00", weekly="mon,thu") == "cron(0 21 ? * MON,THU *)"
 
     def test_weekly_nth(self):
-        assert cron.build_expression("21:00", weekly="水", nth=2) == "cron(0 21 ? * 4#2 *)"
+        assert cron.build_cron_expression("21:00", weekly="水", nth=2) == "cron(0 21 ? * 4#2 *)"
 
     def test_neither(self):
         with pytest.raises(ValueError, match="どちらか一方"):
-            cron.build_expression("21:00")
+            cron.build_cron_expression("21:00")
 
     def test_both(self):
         with pytest.raises(ValueError, match="どちらか一方"):
-            cron.build_expression("21:00", daily=True, weekly="mon")
+            cron.build_cron_expression("21:00", daily=True, weekly="mon")
 
     def test_daily_with_nth(self):
         with pytest.raises(ValueError, match="--nth"):
-            cron.build_expression("21:00", daily=True, nth=1)
+            cron.build_cron_expression("21:00", daily=True, nth=1)
 
     @pytest.mark.parametrize("nth", [0, 6])
     def test_nth_out_of_range(self, nth):
         with pytest.raises(ValueError, match="1〜5"):
-            cron.build_expression("21:00", weekly="wed", nth=nth)
+            cron.build_cron_expression("21:00", weekly="wed", nth=nth)
 
     def test_nth_multiple_days(self):
         with pytest.raises(ValueError, match="曜日は1つだけ"):
-            cron.build_expression("21:00", weekly="wed,fri", nth=1)
+            cron.build_cron_expression("21:00", weekly="wed,fri", nth=1)
 
 
 class TestReplaceTime:
@@ -193,13 +193,13 @@ class TestProperties:
 
     @given(hours, minutes)
     def test_daily_expression_roundtrip(self, hour, minute):
-        expr = cron.build_expression(fmt_at(hour, minute), daily=True)
+        expr = cron.build_cron_expression(fmt_at(hour, minute), daily=True)
         assert expr == f"cron({minute} {hour} * * ? *)"
         assert cron.describe(expr) == f"毎日 {fmt_at(hour, minute)}"
 
     @given(hours, minutes, weekday_sets)
     def test_weekly_expression_roundtrip(self, hour, minute, days):
-        expr = cron.build_expression(fmt_at(hour, minute), weekly=",".join(d[0] for d in days))
+        expr = cron.build_cron_expression(fmt_at(hour, minute), weekly=",".join(d[0] for d in days))
         ordered = sorted(days, key=lambda d: d[3])
         assert expr == f"cron({minute} {hour} ? * {','.join(d[4] for d in ordered)} *)"
         labels = "・".join(d[2] for d in ordered)
@@ -207,15 +207,15 @@ class TestProperties:
 
     @given(hours, minutes, weekdays, nths)
     def test_nth_expression_roundtrip(self, hour, minute, day, nth):
-        expr = cron.build_expression(fmt_at(hour, minute), weekly=day[0], nth=nth)
+        expr = cron.build_cron_expression(fmt_at(hour, minute), weekly=day[0], nth=nth)
         assert expr == f"cron({minute} {hour} ? * {day[3]}#{nth} *)"
         assert cron.describe(expr) == f"毎月第{nth}{day[2]}曜 {fmt_at(hour, minute)}"
 
     @given(hours, minutes, hours, minutes, weekday_sets)
     def test_replace_time_only_changes_time(self, h1, m1, h2, m2, days):
-        original = cron.build_expression(fmt_at(h1, m1), weekly=",".join(d[0] for d in days))
+        original = cron.build_cron_expression(fmt_at(h1, m1), weekly=",".join(d[0] for d in days))
         replaced = cron.replace_time(original, fmt_at(h2, m2))
-        assert replaced == cron.build_expression(
+        assert replaced == cron.build_cron_expression(
             fmt_at(h2, m2), weekly=",".join(d[0] for d in days)
         )
         assert original.split(" ")[2:] == replaced.split(" ")[2:]

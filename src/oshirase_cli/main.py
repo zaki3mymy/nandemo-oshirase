@@ -235,7 +235,7 @@ def _expression_from_args(args: argparse.Namespace) -> str:
         raise CliError("--at で送信時刻を指定してください")
     if not args.daily and args.weekly is None:
         raise CliError("--daily / --weekly / --cron のいずれかを指定してください")
-    return cron.build_expression(args.at, daily=args.daily, weekly=args.weekly, nth=args.nth)
+    return cron.build_cron_expression(args.at, daily=args.daily, weekly=args.weekly, nth=args.nth)
 
 
 def build_parser() -> argparse.ArgumentParser:

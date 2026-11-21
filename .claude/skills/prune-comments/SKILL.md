@@ -42,6 +42,20 @@ description: コードコメントと docstring を Tautology / Excuse / Stale /
   （`# POST /webhook (APIキー不要 - LINEプラットフォームから送信される)`）
 - 値の意味が名前から分からない定数の説明、ほかのファイルと一致させる必要があるという注意、外部ドキュメントへのリンク
 - 公開 API・ライブラリの docstring で、引数・戻り値・例外の仕様を書いているもの
+- 型だけでは中身が分からない戻り値の説明（`-> tuple[int, int]` に「(hour, minute)」）。
+  `tuple` や `dict` の各要素の意味は型から読めないので、自明ではない
+
+### 消すと情報が減るときは、名前や型に移してから消す
+
+docstring が名前や型に足りない情報を補っているなら、消すだけにしない。次のどちらかにする。
+
+- **名前に移す**: `build_expression` の docstring が「cron 式を作る」なら、`build_cron_expression` に改名して消す
+  （呼び出し元とテストも直す）
+- **型に移す**: `-> tuple[int, int]` で「(hour, minute)」と説明しているなら、
+  `class TimeOfDay(NamedTuple): hour: int; minute: int` を返すようにして消す
+  （NamedTuple はタプルとして分割代入・比較できるので、呼び出し元は変えずに済む）
+
+移せないなら、そのコメントは Decision Record として残す。
 
 ### Stale の確かめ方（推測で決めない）
 
@@ -84,7 +98,7 @@ description: コードコメントと docstring を Tautology / Excuse / Stale /
 
 ## 注意
 
-- 消すのはコメントだけ。コードの意味が変わる編集はしない。
+- 消すのはコメントだけ。コードの動作が変わる編集はしない（上の「名前や型に移す」は、動作を変えない改名と型の変更に限る）。
 - 迷ったものは Decision Record として残す。消しすぎより残しすぎのほうが害が小さい。
 - Excuse は勝手に消さない。欠点を隠すことになる。
 - ユーザーが書いたばかりのコメントを、実装モードで大量に消すときは、消す前に一言伝える。
