@@ -31,7 +31,6 @@ _CRON_PATTERN = re.compile(r"^cron\((\S+) (\S+) (\S+) (\S+) (\S+) (\S+)\)$")
 
 
 def parse_at(at: str) -> tuple[int, int]:
-    """Parse ``HH:MM`` into (hour, minute)."""
     m = _AT_PATTERN.match(at.strip())
     if not m:
         raise ValueError(f"時刻は HH:MM 形式で指定してください: {at!r}")
@@ -63,7 +62,6 @@ def build_expression(
     weekly: str | None = None,
     nth: int | None = None,
 ) -> str:
-    """Build a cron expression from friendly options."""
     hour, minute = parse_at(at)
     if daily == (weekly is not None):
         raise ValueError("--daily と --weekly のどちらか一方を指定してください")
@@ -90,7 +88,6 @@ def build_expression(
 
 
 def replace_time(expression: str, at: str) -> str:
-    """Replace the time-of-day of an existing cron expression."""
     hour, minute = parse_at(at)
     m = _CRON_PATTERN.match(expression)
     if not m or not (m.group(1).isdigit() and m.group(2).isdigit()):

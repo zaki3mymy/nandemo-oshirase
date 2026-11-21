@@ -1,5 +1,3 @@
-"""Tests for parse_request function."""
-
 import base64
 import json
 
@@ -9,8 +7,6 @@ from nandemo_oshirase.lambda_function import LambdaEvent, NotifyRequest, parse_r
 
 
 class TestParseRequestSingleMessage:
-    """Test parsing single message."""
-
     def test_parse_request_single_message(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
         result = parse_request(event)
@@ -35,8 +31,6 @@ class TestParseRequestSingleMessage:
 
 
 class TestParseRequestMultipleMessages:
-    """Test parsing multiple messages."""
-
     def test_parse_request_multiple_messages(self):
         event: LambdaEvent = {"body": json.dumps({"messages": ["Hello", "World"]})}
         result = parse_request(event)
@@ -54,8 +48,6 @@ class TestParseRequestMultipleMessages:
 
 
 class TestParseRequestBase64:
-    """Test parsing base64 encoded body."""
-
     def test_parse_request_base64_encoded(self):
         body = json.dumps({"message": "Hello"})
         encoded_body = base64.b64encode(body.encode()).decode()
@@ -77,8 +69,6 @@ class TestParseRequestBase64:
 
 
 class TestParseRequestInvalidJson:
-    """Test parsing invalid JSON."""
-
     def test_parse_request_invalid_json(self):
         event: LambdaEvent = {"body": "not valid json"}
         with pytest.raises(ValueError, match="Invalid JSON"):

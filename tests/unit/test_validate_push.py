@@ -1,5 +1,3 @@
-"""Tests for validate_push_messages function (LINE validate API)."""
-
 import json
 import os
 from unittest.mock import MagicMock, patch
@@ -18,8 +16,6 @@ def _ok_response() -> MagicMock:
 
 
 class TestValidatePushMessages:
-    """Test validating messages with the LINE validate API."""
-
     def test_validate_push_messages_success(self):
         messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
 

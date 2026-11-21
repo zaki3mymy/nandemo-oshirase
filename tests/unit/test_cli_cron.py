@@ -1,5 +1,3 @@
-"""Tests for oshirase_cli.cron."""
-
 import re
 
 import pytest
@@ -164,8 +162,6 @@ class TestDescribe:
 
 
 class TestProperties:
-    """Property-based tests (Hypothesis)."""
-
     @given(hours, minutes)
     def test_parse_at_roundtrip(self, hour, minute):
         assert cron.parse_at(fmt_at(hour, minute)) == (hour, minute)
@@ -222,7 +218,6 @@ class TestProperties:
         assert replaced == cron.build_expression(
             fmt_at(h2, m2), weekly=",".join(d[0] for d in days)
         )
-        # 時刻以外のフィールドは変わらない
         assert original.split(" ")[2:] == replaced.split(" ")[2:]
 
     @given(st.text())

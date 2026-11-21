@@ -30,7 +30,6 @@ FIXED_DATE_TIME = (1980, 1, 1, 0, 0, 0)
 
 
 def locked_version(lock_path: Path, package: str) -> str:
-    """uv.lock から package のバージョンを返す。"""
     lock = tomllib.loads(lock_path.read_text())
     for pkg in lock.get("package", []):
         if pkg["name"] == package:

@@ -1,5 +1,3 @@
-"""Tests for lambda_handler function."""
-
 import json
 import os
 from pathlib import Path
@@ -9,8 +7,6 @@ from nandemo_oshirase.lambda_function import LambdaEvent, lambda_handler
 
 
 class TestLambdaHandlerSuccess:
-    """Test successful lambda handler execution."""
-
     def test_lambda_handler_success_single_message(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
@@ -73,8 +69,6 @@ class TestLambdaHandlerSuccess:
 
 
 class TestLambdaHandlerNoMessages:
-    """Test lambda handler with no valid messages."""
-
     def test_lambda_handler_no_messages_empty_list(self):
         event: LambdaEvent = {"body": json.dumps({"messages": []})}
 
@@ -107,8 +101,6 @@ class TestLambdaHandlerNoMessages:
 
 
 class TestLambdaHandlerMissingEnv:
-    """Test lambda handler with missing environment variables."""
-
     def test_lambda_handler_missing_token(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
@@ -142,8 +134,6 @@ class TestLambdaHandlerMissingEnv:
 
 
 class TestLambdaHandlerInvalidRequest:
-    """Test lambda handler with invalid request."""
-
     def test_lambda_handler_invalid_json(self):
         event: LambdaEvent = {"body": "not valid json"}
 
@@ -158,8 +148,6 @@ class TestLambdaHandlerInvalidRequest:
 
 
 class TestLambdaHandlerDocs:
-    """Test GET /docs endpoint."""
-
     docs_html = Path(__file__).parent.parent.parent / "src" / "nandemo_oshirase" / "docs.html"
 
     def setup_method(self):
@@ -186,8 +174,6 @@ class TestLambdaHandlerDocs:
 
 
 class TestLambdaHandlerWebhook:
-    """Test routing to webhook handler."""
-
     def test_routes_post_webhook_to_handle_webhook(self):
         event: LambdaEvent = {
             "httpMethod": "POST",
@@ -201,8 +187,6 @@ class TestLambdaHandlerWebhook:
 
 
 class TestLambdaHandlerPushError:
-    """Test lambda handler when push_messages fails."""
-
     def test_lambda_handler_push_error(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
@@ -226,8 +210,6 @@ class TestLambdaHandlerPushError:
 
 
 class TestLambdaHandlerDryRun:
-    """Test POST /notify with dry_run."""
-
     def test_dry_run_does_not_push(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
 
