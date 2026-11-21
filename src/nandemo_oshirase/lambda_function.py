@@ -1,5 +1,3 @@
-"""Lambda function for LINE notification service."""
-
 import base64
 import hashlib
 import json
@@ -15,7 +13,6 @@ from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 from opentelemetry import metrics, trace
 
 logger = logging.getLogger(__name__)
-# 不正な LOG_LEVEL のときは INFO にする
 _log_level = logging.getLevelNamesMapping().get(
     os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
 )
@@ -75,8 +72,6 @@ class ScheduledNotificationError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class NotifyRequest:
-    """Parsed body of POST /notify."""
-
     messages: list[str]
     # True のときは LINE に送信しない（デプロイ後の動作確認用）
     dry_run: bool = False
@@ -86,7 +81,6 @@ def is_dry_run(data: dict[str, Any]) -> bool:
     """Return True only if ``dry_run`` is the JSON boolean ``true``.
 
     文字列の "true" などは dry run として扱わない。
-    スケジュール実行のイベントでも同じ判定を使えるように関数にしている。
     """
     return data.get("dry_run") is True
 
@@ -134,7 +128,6 @@ def parse_request(event: LambdaEvent) -> NotifyRequest:
 
 
 def validate_messages(messages: list[str]) -> list[str]:
-    """Validate and filter messages."""
     validated = [msg for msg in messages if msg.strip()]
     skipped = len(messages) - len(validated)
     if skipped:
@@ -143,12 +136,10 @@ def validate_messages(messages: list[str]) -> list[str]:
 
 
 def format_line_messages(messages: list[str]) -> list[LineMessage]:
-    """Format messages for LINE Messaging API."""
     return [{"type": "text", "text": msg} for msg in messages]
 
 
 def split_into_batches(messages: list[LineMessage], batch_size: int = 5) -> list[list[LineMessage]]:
-    """Split messages into batches."""
     if not messages:
         return []
     return [messages[i : i + batch_size] for i in range(0, len(messages), batch_size)]
@@ -207,7 +198,6 @@ def push_messages(
         channel_token,
         {"X-Line-Retry-Key": retry_key} if retry_key else None,
     )
-    # エラーのときは _post_line_api が 4xx / 5xx を返す
     if 200 <= result["statusCode"] < 300:
         status = "success"
     elif result["statusCode"] == 409 and retry_key:
@@ -272,7 +262,6 @@ def handle_webhook(event: LambdaEvent) -> LambdaResponse:
 
 @_tracer.start_as_current_span("serve_docs")
 def serve_docs() -> LambdaResponse:
-    """Return Swagger UI HTML for GET /docs."""
     html_path = os.path.join(os.path.dirname(__file__), "docs.html")
     with _tracer.start_as_current_span("open_file"):
         with open(html_path) as f:
@@ -290,14 +279,13 @@ class LineCredentials(NamedTuple):
 
 
 class MissingCredentialError(Exception):
-    """Raised when a required LINE credential cannot be resolved."""
+    pass
 
 
 # SSM から読んだ値のキャッシュの有効期限。SSM の値を更新したとき、
 # デプロイし直さなくてもこの時間が経てば新しい値に切り替わる。
 CREDENTIALS_CACHE_TTL_SECONDS = 15 * 60
 
-# (環境変数名, パラメータ名を持つ環境変数名)
 _CREDENTIAL_SOURCES = {
     "channel_token": ("LINE_CHANNEL_TOKEN", "LINE_CHANNEL_TOKEN_PARAM"),
     "user_id": ("LINE_USER_ID", "LINE_USER_ID_PARAM"),
@@ -321,7 +309,6 @@ def _create_boto3_client(service: str) -> Any:
 
 
 def _get_ssm_client() -> Any:
-    """Return a cached SSM client."""
     global _ssm_client
     if _ssm_client is None:
         _ssm_client = _create_boto3_client("ssm")
@@ -329,7 +316,6 @@ def _get_ssm_client() -> Any:
 
 
 def clear_credentials_cache() -> None:
-    """Drop cached SSM parameter values."""
     _ssm_cache.clear()
 
 
@@ -414,11 +400,10 @@ _dynamodb_client: Any = None
 
 
 class RetryKeyError(Exception):
-    """Raised when a retry key cannot be stored in or read from DynamoDB."""
+    pass
 
 
 def _get_dynamodb_client() -> Any:
-    """Return a cached DynamoDB client."""
     global _dynamodb_client
     if _dynamodb_client is None:
         _dynamodb_client = _create_boto3_client("dynamodb")
@@ -539,7 +524,6 @@ def deliver_messages(
         logger.debug("Sending batch %d/%d", i, len(batches))
         result = push_messages(batch, channel_token, user_id, retry_key=retry_key)
         if result["statusCode"] == 409 and retry_key:
-            # 同じ再送キーのリクエストを LINE がすでに受け付けている（送信済み）
             logger.info("Batch %d/%d was already sent, skipping", i, len(batches))
             continue
         if result["statusCode"] != 200:
@@ -556,7 +540,6 @@ def deliver_messages(
 
 @_tracer.start_as_current_span("handle_notify")
 def handle_notify(event: LambdaEvent) -> LambdaResponse:
-    """Handle POST /notify: send messages via LINE."""
     try:
         channel_token, user_id = load_line_credentials()
     except MissingCredentialError as e:
@@ -604,12 +587,10 @@ def handle_scheduled(event: ScheduledEvent) -> LambdaResponse:
 
 
 def is_scheduled_event(event: LambdaEvent | ScheduledEvent) -> TypeIs[ScheduledEvent]:
-    """Return True if the event was sent by EventBridge Scheduler."""
     return event.get("source") == SCHEDULER_EVENT_SOURCE
 
 
 def lambda_handler(event: LambdaEvent | ScheduledEvent, context: Any) -> LambdaResponse:
-    """Route requests to the appropriate handler."""
     logger.info("Lambda invoked")
 
     if is_scheduled_event(event):

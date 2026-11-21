@@ -1,11 +1,7 @@
-"""Tests for format_line_messages function."""
-
 from nandemo_oshirase.lambda_function import format_line_messages
 
 
 class TestFormatLineMessages:
-    """Test formatting messages for LINE API."""
-
     def test_format_line_messages_single(self):
         messages = ["Hello"]
         result = format_line_messages(messages)

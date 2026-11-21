@@ -1,11 +1,7 @@
-"""Tests for validate_messages function."""
-
 from nandemo_oshirase.lambda_function import validate_messages
 
 
 class TestValidateMessagesValid:
-    """Test valid messages."""
-
     def test_validate_messages_valid(self):
         messages = ["Hello", "World"]
         result = validate_messages(messages)
@@ -18,8 +14,6 @@ class TestValidateMessagesValid:
 
 
 class TestValidateMessagesEmptyString:
-    """Test empty string handling."""
-
     def test_validate_messages_empty_string(self):
         messages = ["Hello", "", "World"]
         result = validate_messages(messages)
@@ -32,8 +26,6 @@ class TestValidateMessagesEmptyString:
 
 
 class TestValidateMessagesWhitespaceOnly:
-    """Test whitespace-only string handling."""
-
     def test_validate_messages_whitespace_only(self):
         messages = ["Hello", "   ", "World"]
         result = validate_messages(messages)

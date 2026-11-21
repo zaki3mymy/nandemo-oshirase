@@ -23,7 +23,6 @@ data "archive_file" "lambda_zip" {
   output_path = "${path.module}/lambda.zip"
 }
 
-# IAM Role for Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "${local.name_prefix}-lambda-role"
 
@@ -46,7 +45,6 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# LINE の認証情報（SSM Parameter Store）の読み取り
 # AWS管理キー（aws/ssm）で暗号化された SecureString なので kms:Decrypt は不要
 resource "aws_iam_role_policy" "lambda_read_line_credentials" {
   name = "${local.name_prefix}-read-line-credentials"
@@ -114,7 +112,6 @@ resource "aws_lambda_layer_version" "otel_urllib" {
   compatible_runtimes = ["python3.13"]
 }
 
-# Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${local.name_prefix}-function"
@@ -167,19 +164,16 @@ resource "aws_lambda_function" "notify" {
   }
 }
 
-# CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${aws_lambda_function.notify.function_name}"
   retention_in_days = var.log_retention_days
 }
 
-# CloudWatch Log Group for API Gateway access logs
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/${var.stage_name}"
   retention_in_days = var.log_retention_days
 }
 
-# API Gateway REST API
 resource "aws_api_gateway_rest_api" "api" {
   name        = "${local.name_prefix}-api"
   description = "API for LINE notification service"
@@ -189,14 +183,12 @@ resource "aws_api_gateway_rest_api" "api" {
   }
 }
 
-# API Gateway Resource: /notify
 resource "aws_api_gateway_resource" "notify" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
   path_part   = "notify"
 }
 
-# API Gateway Method: POST /notify
 resource "aws_api_gateway_method" "notify_post" {
   rest_api_id      = aws_api_gateway_rest_api.api.id
   resource_id      = aws_api_gateway_resource.notify.id
@@ -205,7 +197,6 @@ resource "aws_api_gateway_method" "notify_post" {
   api_key_required = true
 }
 
-# API Gateway Integration with Lambda
 resource "aws_api_gateway_integration" "lambda_integration" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.notify.id
@@ -215,7 +206,6 @@ resource "aws_api_gateway_integration" "lambda_integration" {
   uri                     = aws_lambda_function.notify.invoke_arn
 }
 
-# Lambda Permission for API Gateway
 resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
@@ -224,7 +214,6 @@ resource "aws_lambda_permission" "api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }
 
-# API Gateway Resource: /webhook
 resource "aws_api_gateway_resource" "webhook" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
@@ -240,7 +229,6 @@ resource "aws_api_gateway_method" "webhook_post" {
   api_key_required = false
 }
 
-# API Gateway Integration: POST /webhook → Lambda
 resource "aws_api_gateway_integration" "webhook_integration" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.webhook.id
@@ -250,14 +238,12 @@ resource "aws_api_gateway_integration" "webhook_integration" {
   uri                     = aws_lambda_function.notify.invoke_arn
 }
 
-# API Gateway Resource: /docs
 resource "aws_api_gateway_resource" "docs" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
   path_part   = "docs"
 }
 
-# API Gateway Method: GET /docs (APIキー不要)
 resource "aws_api_gateway_method" "docs_get" {
   rest_api_id      = aws_api_gateway_rest_api.api.id
   resource_id      = aws_api_gateway_resource.docs.id
@@ -266,7 +252,6 @@ resource "aws_api_gateway_method" "docs_get" {
   api_key_required = false
 }
 
-# API Gateway Integration: GET /docs → Lambda
 resource "aws_api_gateway_integration" "docs_integration" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.docs.id
@@ -276,7 +261,6 @@ resource "aws_api_gateway_integration" "docs_integration" {
   uri                     = aws_lambda_function.notify.invoke_arn
 }
 
-# API Gateway Deployment
 resource "aws_api_gateway_deployment" "deployment" {
   depends_on = [
     aws_api_gateway_integration.lambda_integration,
@@ -307,7 +291,6 @@ resource "aws_api_gateway_deployment" "deployment" {
   }
 }
 
-# API Gateway Stage
 resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.api.id
@@ -339,13 +322,11 @@ resource "aws_api_gateway_method_settings" "all" {
   }
 }
 
-# API Key
 resource "aws_api_gateway_api_key" "api_key" {
   name    = "${local.name_prefix}-api-key"
   enabled = true
 }
 
-# Usage Plan
 resource "aws_api_gateway_usage_plan" "usage_plan" {
   name = "${local.name_prefix}-usage-plan"
 
@@ -355,7 +336,6 @@ resource "aws_api_gateway_usage_plan" "usage_plan" {
   }
 }
 
-# Usage Plan Key
 resource "aws_api_gateway_usage_plan_key" "usage_plan_key" {
   key_id        = aws_api_gateway_api_key.api_key.id
   key_type      = "API_KEY"

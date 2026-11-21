@@ -1,5 +1,3 @@
-"""Tests for handle_webhook function."""
-
 import base64
 import json
 import logging
@@ -19,8 +17,6 @@ def _event_b64(body: dict) -> LambdaEvent:
 
 
 class TestHandleWebhookLogsSourceIds:
-    """Verify that source IDs are logged for each source type."""
-
     def test_logs_user_event(self, caplog: pytest.LogCaptureFixture):
         event = _event({"events": [{"source": {"type": "user", "userId": "U123"}}]})
         with caplog.at_level(logging.INFO, logger="nandemo_oshirase.lambda_function"):

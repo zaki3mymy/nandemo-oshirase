@@ -89,8 +89,6 @@ def build_input(messages: list[str]) -> str:
 
 
 class ReminderService:
-    """Thin wrapper around EventBridge Scheduler / Lambda for one environment."""
-
     def __init__(self, config: Config, scheduler: Any, lambda_client: Any, sts: Any) -> None:
         self.config = config
         self.scheduler = scheduler
@@ -213,11 +211,6 @@ class ReminderService:
         return body
 
 
-# ---------------------------------------------------------------------------
-# argparse
-# ---------------------------------------------------------------------------
-
-
 def _add_schedule_options(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("いつ送るか")
     freq = group.add_mutually_exclusive_group()
@@ -242,7 +235,7 @@ def _expression_from_args(args: argparse.Namespace) -> str:
         raise CliError("--at で送信時刻を指定してください")
     if not args.daily and args.weekly is None:
         raise CliError("--daily / --weekly / --cron のいずれかを指定してください")
-    return cron.build_expression(args.at, daily=args.daily, weekly=args.weekly, nth=args.nth)
+    return cron.build_cron_expression(args.at, daily=args.daily, weekly=args.weekly, nth=args.nth)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -298,7 +291,6 @@ def format_reminder(r: Reminder) -> str:
 
 
 def run(args: argparse.Namespace, service: ReminderService) -> str:
-    """Execute a parsed command and return text to print."""
     cmd = args.command
 
     if cmd == "list":
