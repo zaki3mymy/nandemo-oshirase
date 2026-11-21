@@ -54,3 +54,13 @@ updates:
       prefix: "chore"
       prefix-development: "chore"
       include: "scope"
+
+  # 開発のツール（flake.lock の入力。nixpkgs を進めると uv・nodejs などがまとめて新しくなる）
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
