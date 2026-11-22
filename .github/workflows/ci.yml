@@ -20,7 +20,7 @@ on:
   workflow_call:
 
 env:
-  # nix のストアのキャッシュは develop・main への push で CD から呼ばれたときだけ保存する。
+  # キャッシュ（nix のストア・uv・pre-commit）は develop・main への push で CD から呼ばれたときだけ保存する。
   # PR で作ったキャッシュはその PR でしか使えないので、PR では読むだけにする
   SAVE_CACHE: ${{ github.event_name != 'pull_request' }}
 
@@ -45,6 +45,22 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
           save: ${{ env.SAVE_CACHE }}
 
+      # uv のパッケージのキャッシュと、pre-commit のフックの環境（pre-commit-hooks など）。
+      # 保存は最後のステップで、SAVE_CACHE のときだけ行う
+      - name: Restore uv and pre-commit cache
+        id: tool-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pre-commit
+          key: tools-${{ runner.os }}-${{ hashFiles('uv.lock', '.pre-commit-config.yaml', 'flake.lock') }}
+          restore-keys: tools-${{ runner.os }}-
+
+      # devShell の用意（ツールの取得）を、ほかのステップと分けて時間を見られるようにする
+      - name: Set up dev shell
+        run: nix develop -c pre-commit --version
+
       - name: Install dependencies
         run: nix develop -c uv sync --dev
 
@@ -65,6 +81,20 @@ jobs:
       # terraform は flake に入れていないので、上の setup-terraform で入れたものを使う
       - name: Run pre-commit
         run: nix develop -c pre-commit run --all-files --show-diff-on-failure --color=always
+
+      # uv のキャッシュから、CI で取り直したほうが速いもの（ビルド済みの wheel 以外）を消してから保存する
+      - name: Prune uv cache
+        if: env.SAVE_CACHE == 'true' && steps.tool-cache.outputs.cache-hit != 'true'
+        run: nix develop -c uv cache prune --ci
+
+      - name: Save uv and pre-commit cache
+        if: env.SAVE_CACHE == 'true' && steps.tool-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pre-commit
+          key: ${{ steps.tool-cache.outputs.cache-primary-key }}
 
   test-unit:
     runs-on: ubuntu-latest
