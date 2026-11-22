@@ -15,6 +15,9 @@ exporters:
       insecure: true
   prometheus:
     endpoint: 0.0.0.0:8889
+  # Loki は OTLP を直接受けられる（/otlp/v1/logs）
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
 
 extensions:
   health_check:
@@ -29,3 +32,6 @@ service:
     metrics:
       receivers: [otlp]
       exporters: [debug, prometheus]
+    logs:
+      receivers: [otlp]
+      exporters: [debug, otlphttp/loki]

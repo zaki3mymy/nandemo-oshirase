@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""urllib の計装（opentelemetry-instrumentation-urllib）だけを入れた Lambda レイヤーの zip を作る。
+"""OTel のコミュニティの Python 計装レイヤーに無い計装を入れた Lambda レイヤーの zip を作る。
 
-OTel のコミュニティの Python 計装レイヤーには urllib の計装が入っていないため、
-自前のレイヤーで足す。urllib の計装が無いと、LINE API の呼び出しの span が出ない
-（docs/deployment.md を参照）。
+コミュニティのレイヤーに入っていない、次の計装を自前のレイヤーで足す（docs/deployment.md を参照）。
+
+- opentelemetry-instrumentation-urllib: 無いと、LINE API の呼び出しの span が出ない
+- opentelemetry-instrumentation-logging: 無いと、logging のログが OTel のログとして送られない
 
 - バージョンは uv.lock のものを使う。uv.lock の OTel の依存は、
   コミュニティのレイヤーと同じバージョンに固定している
@@ -12,7 +13,7 @@ OTel のコミュニティの Python 計装レイヤーには urllib の計装�
 - zip は、同じバージョンなら毎回同じ中身（ハッシュ）になるように作る。
   Terraform の source_code_hash が変わらなければ、レイヤーは作り直されない
 
-使い方: python3 scripts/build-otel-urllib-layer.py [出力する zip のパス]
+使い方: python3 scripts/build-otel-instrumentations-layer.py [出力する zip のパス]
 """
 
 import subprocess
@@ -22,9 +23,12 @@ import tomllib
 import zipfile
 from pathlib import Path
 
-PACKAGE = "opentelemetry-instrumentation-urllib"
+PACKAGES = [
+    "opentelemetry-instrumentation-urllib",
+    "opentelemetry-instrumentation-logging",
+]
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT = ROOT / "dist" / "otel-urllib-layer.zip"
+DEFAULT_OUTPUT = ROOT / "dist" / "otel-instrumentations-layer.zip"
 # zip のエントリーに付ける固定の日時（zip の形式で表せる一番古い日時）
 FIXED_DATE_TIME = (1980, 1, 1, 0, 0, 0)
 
@@ -37,8 +41,8 @@ def locked_version(lock_path: Path, package: str) -> str:
     raise SystemExit(f"{package} が {lock_path} にありません")
 
 
-def build(output: Path) -> str:
-    version = locked_version(ROOT / "uv.lock", PACKAGE)
+def build(output: Path) -> list[str]:
+    requirements = [f"{p}=={locked_version(ROOT / 'uv.lock', p)}" for p in PACKAGES]
     with tempfile.TemporaryDirectory() as tmp:
         # レイヤーの中身は /opt/python に展開される
         target = Path(tmp) / "python"
@@ -54,7 +58,7 @@ def build(output: Path) -> str:
                 "--no-compile",
                 "--target",
                 str(target),
-                f"{PACKAGE}=={version}",
+                *requirements,
             ],
             check=True,
         )
@@ -66,10 +70,10 @@ def build(output: Path) -> str:
                 info.external_attr = 0o644 << 16
                 info.compress_type = zipfile.ZIP_DEFLATED
                 zf.writestr(info, path.read_bytes())
-    return version
+    return requirements
 
 
 if __name__ == "__main__":
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUTPUT
-    ver = build(out)
-    print(f"{PACKAGE}=={ver} -> {out}")
+    for req in build(out):
+        print(f"{req} -> {out}")

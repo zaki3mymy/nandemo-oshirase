@@ -12,12 +12,17 @@ from dataclasses import dataclass
 from typing import Any, NamedTuple, NotRequired, TypedDict, TypeIs
 
 from opentelemetry import metrics, trace
+from opentelemetry._logs import get_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider
 
 logger = logging.getLogger(__name__)
 _log_level = logging.getLevelNamesMapping().get(
     os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
 )
 logger.setLevel(_log_level)
+
+# 実行の終わりにログを flush するときに待つ最大の時間。送り先は同じ実行環境の Collector（localhost）
+LOG_FLUSH_TIMEOUT_MILLIS = 5000
 
 _tracer = trace.get_tracer("nandemo_oshirase")
 _meter = metrics.get_meter("nandemo_oshirase")
@@ -593,7 +598,27 @@ def is_scheduled_event(event: LambdaEvent | ScheduledEvent) -> TypeIs[ScheduledE
     return event.get("source") == SCHEDULER_EVENT_SOURCE
 
 
+def flush_logs() -> None:
+    """Flush OTel logs before Lambda freezes the execution environment.
+
+    The Lambda instrumentation flushes only traces and metrics, so logs batched by the SDK
+    would wait until the next invocation (or be lost when the environment shuts down).
+    """
+    provider = get_logger_provider()
+    # opentelemetry-instrument を通さない（SDK が設定されていない）ときは、API の
+    # ProxyLoggerProvider が返るので flush しない
+    if isinstance(provider, LoggerProvider):
+        provider.force_flush(timeout_millis=LOG_FLUSH_TIMEOUT_MILLIS)
+
+
 def lambda_handler(event: LambdaEvent | ScheduledEvent, context: Any) -> LambdaResponse:
+    try:
+        return route(event)
+    finally:
+        flush_logs()
+
+
+def route(event: LambdaEvent | ScheduledEvent) -> LambdaResponse:
     logger.info("Lambda invoked")
 
     if is_scheduled_event(event):

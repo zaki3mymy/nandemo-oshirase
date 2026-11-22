@@ -54,6 +54,7 @@ services:
     depends_on:
       - jaeger
       - prometheus
+      - loki
 
   jaeger:
     # jaegertracing/all-in-one:1.76.0
@@ -75,6 +76,14 @@ services:
     networks:
       - local-net
 
+  loki:
+    # grafana/loki:3.7.9（イメージに入っている既定の設定で動かす。OTLP は /otlp で受ける）
+    image: grafana/loki@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    ports:
+      - "3100:3100"
+    networks:
+      - local-net
+
   grafana:
     # grafana/grafana:13.1.3
     image: grafana/grafana@sha256:ab5cb380e3ff3172d6c8bd2e7cfd31cce977d2881b260e1f5bc089bf0b759b43
@@ -87,6 +96,7 @@ services:
       - local-net
     depends_on:
       - prometheus
+      - loki
 
   lambda:
     build:
@@ -119,6 +129,7 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
       OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: DELTA
     depends_on:
       stub:

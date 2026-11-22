@@ -1,9 +1,13 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
-from nandemo_oshirase.lambda_function import LambdaEvent, lambda_handler
+import pytest
+from opentelemetry._logs._internal import ProxyLoggerProvider
+from opentelemetry.sdk._logs import LoggerProvider
+
+from nandemo_oshirase.lambda_function import LOG_FLUSH_TIMEOUT_MILLIS, LambdaEvent, lambda_handler
 
 
 class TestLambdaHandlerSuccess:
@@ -403,3 +407,41 @@ class TestLambdaHandlerDryRun:
                 lambda_handler(event, None)
 
                 mock_hist.record.assert_called_once_with(2)
+
+
+class TestLambdaHandlerFlushLogs:
+    def test_flushes_logs_after_handling(self):
+        event: LambdaEvent = {"httpMethod": "POST", "path": "/webhook", "body": '{"events": []}'}
+
+        provider = MagicMock(spec=LoggerProvider)
+        with patch("nandemo_oshirase.lambda_function.get_logger_provider", return_value=provider):
+            lambda_handler(event, None)
+
+        provider.force_flush.assert_called_once_with(timeout_millis=LOG_FLUSH_TIMEOUT_MILLIS)
+
+    def test_flushes_logs_even_when_handling_raises(self):
+        event: LambdaEvent = {"httpMethod": "POST", "path": "/webhook", "body": '{"events": []}'}
+
+        provider = MagicMock(spec=LoggerProvider)
+        with (
+            patch("nandemo_oshirase.lambda_function.get_logger_provider", return_value=provider),
+            patch(
+                "nandemo_oshirase.lambda_function.handle_webhook", side_effect=RuntimeError("boom")
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            lambda_handler(event, None)
+
+        provider.force_flush.assert_called_once()
+
+    def test_skips_flush_without_sdk(self):
+        # SDK が設定されていないときは、API の ProxyLoggerProvider が返る
+        event: LambdaEvent = {"httpMethod": "POST", "path": "/webhook", "body": '{"events": []}'}
+
+        with patch(
+            "nandemo_oshirase.lambda_function.get_logger_provider",
+            return_value=ProxyLoggerProvider(),
+        ):
+            result = lambda_handler(event, None)
+
+        assert result["statusCode"] == 200

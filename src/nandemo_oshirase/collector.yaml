@@ -1,5 +1,5 @@
 # Lambda の Collector レイヤー（opentelemetry-lambda のコミュニティ製）の設定。
-# アプリ（Python 計装レイヤー）から OTLP で受けて、Grafana Cloud に otlphttp で送る。
+# アプリ（Python 計装レイヤー）からトレース・メトリクス・ログを OTLP で受けて、Grafana Cloud に otlphttp で送る。
 # 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/main.tf）。
 receivers:
   otlp:
@@ -55,6 +55,12 @@ service:
       processors: [coldstart, attributes/redact, resource/redact, decouple]
       exporters: [otlphttp/grafana_cloud]
     metrics:
+      receivers: [otlp]
+      processors: [resource/redact, decouple]
+      exporters: [otlphttp/grafana_cloud]
+    # アプリの logging のログ（opentelemetry-instrumentation-logging が OTel のログにする）。
+    # Grafana Cloud では Loki に入り、トレース ID・span ID でトレースと紐づく
+    logs:
       receivers: [otlp]
       processors: [resource/redact, decouple]
       exporters: [otlphttp/grafana_cloud]
