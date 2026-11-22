@@ -193,7 +193,6 @@ jobs:
           uv run oshirase --env $ENV delete "$NAME"
 
       # スケジュールから Lambda が呼ばれ、メッセージを確認できるところまでを確かめる。
-      # お知らせは --dry-run で作るので、LINE には送信しない
       - name: Smoke test scheduler fires Lambda
         if: steps.config.outputs.env == 'dev'
         run: |
