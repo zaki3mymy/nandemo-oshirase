@@ -9,11 +9,12 @@ PR のタイトルの付け方とリリースの流れは [release.md](release.m
 | ツール | 用途 |
 | --- | --- |
 | uv | Python と依存関係の管理 |
+| pre-commit | コミット前のチェック。開発環境に入ると、フックが自動で入る（flake.nix の `shellHook`） |
 | nodejs | `scripts/build-docs.sh` の `npx`（API のドキュメントのビルド） |
 
 次のものは flake に入れていないので、別に入れる。
 
-- Python：uv が `.python-version` を見て入れる（CI の `setup-uv` と同じ）。pre-commit・ruff などの Python のツールは uv.lock で管理し、`uv run` で使う
+- Python：uv が `.python-version` を見て入れる（CI の `setup-uv` と同じ）。ruff などの Python のツールは uv.lock で管理し、`uv run` で使う
 - terraform：unfree で cache.nixos.org にビルド済みのものがなく、flake.lock を更新するたびにソースからのビルド（数分）がかかるため。CI では `hashicorp/setup-terraform` で入れる
 - podman・podman-compose：コンテナでの動作確認に使う。コンテナのランタイムなので OS 側で用意する
 
@@ -36,10 +37,9 @@ uv sync --dev
 
 # テスト実行
 uv run pytest
-
-# pre-commitフックのインストール
-uv run pre-commit install
 ```
+
+pre-commit のフックは、開発環境に入ったとき（`direnv allow` のあと、または `nix develop`）に自動で入ります。
 
 ## ローカル環境変数の設定
 
