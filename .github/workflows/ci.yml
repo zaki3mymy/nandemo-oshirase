@@ -144,14 +144,15 @@ jobs:
         run: cp .env.example .env.local
 
       - name: Start local stack
-        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus lambda
+        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki lambda
 
       - name: Wait for services to be healthy
         run: |
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13133/ > /dev/null \
               && curl -sf http://localhost:9090/-/healthy > /dev/null \
-              && curl -sf http://localhost:16686/api/services > /dev/null; then
+              && curl -sf http://localhost:16686/api/services > /dev/null \
+              && curl -sf http://localhost:3100/ready > /dev/null; then
               exit 0
             fi
             sleep 2
