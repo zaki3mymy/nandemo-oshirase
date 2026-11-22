@@ -144,14 +144,15 @@ jobs:
         run: cp .env.example .env.local
 
       - name: Start local stack
-        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus lambda
+        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki lambda
 
       - name: Wait for services to be healthy
         run: |
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13133/ > /dev/null \
               && curl -sf http://localhost:9090/-/healthy > /dev/null \
-              && curl -sf http://localhost:16686/api/services > /dev/null; then
+              && curl -sf http://localhost:16686/api/services > /dev/null \
+              && curl -sf http://localhost:3100/ready > /dev/null; then
               exit 0
             fi
             sleep 2
@@ -207,9 +208,9 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh "$(git describe --tags)"
 
-      - name: Build the urllib instrumentation layer
-        # tf/modules/main.tf の aws_lambda_layer_version.otel_urllib が使う zip（dist/otel-urllib-layer.zip）を作る
-        run: python3 scripts/build-otel-urllib-layer.py
+      - name: Build the OTel instrumentations layer
+        # tf/modules/main.tf の aws_lambda_layer_version.otel_instrumentations が使う zip（dist/otel-instrumentations-layer.zip）を作る
+        run: python3 scripts/build-otel-instrumentations-layer.py
 
       - name: Configure AWS credentials
         id: aws

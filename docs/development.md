@@ -52,7 +52,7 @@ cp .env.example .env.local
 
 ## コンテナでの動作確認
 
-`podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）、OTelのテレメトリ収集・可視化スタック（otel-collector / Jaeger / Prometheus / Grafana）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
+`podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）、OTelのテレメトリ収集・可視化スタック（otel-collector / Jaeger / Prometheus / Loki / Grafana）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
 
 [再送](../README.md#再送冪等性)の再送キーは DynamoDB Local（`dynamodb`、`http://localhost:8000`）に保存します。テーブルは `dynamodb-init` が起動時に作ります（データはメモリにだけあり、止めると消えます）。stub の push API は、ボディに `__error__` が含まれると `500` を、`__already_sent__` が含まれると `409`（送信済みの再送キー）を返します。
 
@@ -76,21 +76,22 @@ curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
   -d '{"httpMethod":"GET","path":"/docs"}'
 ```
 
-## OTelメトリクス・トレースの確認
+## OTelメトリクス・トレース・ログの確認
 
 lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrument` 経由で起動され、OTLP/HTTPでotel-collectorにテレメトリを送信します。上記のリクエストを送った後、以下のUIで確認できます。
 
 | ツール | URL | 用途 |
 |--------|-----|------|
 | Jaeger | http://localhost:16686 | トレースの可視化 |
-| Grafana | http://localhost:3000 | メトリクスダッシュボード（Prometheusデータソースは自動プロビジョニング済み、初回ログインは `admin` / `admin`） |
+| Grafana | http://localhost:3000 | メトリクスダッシュボード、ログ（Prometheus・Jaeger・Lokiのデータソースは自動プロビジョニング済み、初回ログインは `admin` / `admin`） |
 | Prometheus | http://localhost:9090 | メトリクスの生データ確認 |
+| Loki | http://localhost:3100 | ログの保存先（Grafana の Explore でデータソース Loki を選び、`{service_name="nandemo-oshirase"}` で確認。ログの `trace_id` から Jaeger のトレースを開ける） |
 
 ローカル用のCollector/Prometheus設定は `config/` ディレクトリにまとめています（`config/otel-collector-config.yaml`、`config/prometheus.yml`、`config/grafana/`）。
 
 ## 結合テスト
 
-`tests/integration/` には、手動計装したトレース・メトリクスが実際にJaeger・Prometheusまで届いていることを確認する結合テストがあります。`uv run pytest` の対象には含まれず、`podman-compose up -d` でスタック一式を起動した状態で明示的に実行します。
+`tests/integration/` には、手動計装したトレース・メトリクスと、ログが実際にJaeger・Prometheus・Lokiまで届いていることを確認する結合テストがあります。`uv run pytest` の対象には含まれず、`podman-compose up -d` でスタック一式を起動した状態で明示的に実行します。
 
 ```bash
 podman-compose up -d

@@ -1,7 +1,7 @@
-"""Integration tests verifying OTel telemetry reaches Jaeger and Prometheus.
+"""Integration tests verifying OTel telemetry reaches Jaeger, Prometheus and Loki.
 
 Requires the local stack from `podman-compose up -d` to be running:
-stub (Mockoon), otel-collector, jaeger, prometheus and lambda.
+stub (Mockoon), otel-collector, jaeger, prometheus, loki and lambda.
 """
 
 import json
@@ -16,6 +16,7 @@ import pytest
 LAMBDA_URL = "http://localhost:9000/2015-03-31/functions/function/invocations"
 JAEGER_URL = "http://localhost:16686"
 PROMETHEUS_URL = "http://localhost:9090"
+LOKI_URL = "http://localhost:3100"
 OTEL_COLLECTOR_URL = "http://localhost:13133"
 
 
@@ -33,6 +34,7 @@ def require_services():
         "otel-collector": _get(f"{OTEL_COLLECTOR_URL}/"),
         "prometheus": _get(f"{PROMETHEUS_URL}/-/healthy"),
         "jaeger": _get(f"{JAEGER_URL}/api/services"),
+        "loki": _get(f"{LOKI_URL}/ready"),
     }
     not_ready = [name for name, status in services.items() if status != 200]
     if not_ready:
@@ -119,3 +121,37 @@ def test_trace_linked_from_external_caller():
     processes = data["data"][0]["processes"]
     service_names = [p["serviceName"] for p in processes.values()]
     assert "nandemo-oshirase" in service_names
+
+
+def test_logs_recorded_in_loki_with_trace_id():
+    # 呼び出し元の trace_id を渡し、その実行のログに同じ trace_id が付いて Loki に届くことを確かめる
+    trace_id = uuid.uuid4().hex
+    body = json.dumps(
+        {
+            "httpMethod": "POST",
+            "path": "/notify",
+            "headers": {"traceparent": f"00-{trace_id}-00f067aa0ba902b7-01"},
+            "body": json.dumps({"messages": [f"ログの結合テスト {uuid.uuid4()}"]}),
+            "queryStringParameters": None,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        LAMBDA_URL, data=body, headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as res:
+        assert res.status == 200
+
+    # Loki は OTLP の service.name を service_name ラベルに、trace_id を structured metadata にする
+    query = f'{{service_name="nandemo-oshirase"}} | trace_id="{trace_id}"'
+    url = f"{LOKI_URL}/loki/api/v1/query_range?query={urllib.parse.quote(query)}&since=5m"
+    lines: list[str] = []
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        with urllib.request.urlopen(url, timeout=3) as res:
+            data = json.loads(res.read())
+        lines = [line for stream in data["data"]["result"] for _, line in stream["values"]]
+        if lines:
+            break
+        time.sleep(2)
+
+    assert "Lambda invoked" in lines, f"trace_id={trace_id} のログが Loki に無い: {lines}"

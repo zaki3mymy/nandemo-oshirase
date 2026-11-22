@@ -43,7 +43,7 @@ variable "grafana_otlp_auth_parameter" {
   type        = string
 }
 
-variable "otel_urllib_layer_zip_path" {
-  description = "Path to the zip of the Lambda layer with opentelemetry-instrumentation-urllib (built by scripts/build-otel-urllib-layer.py)"
+variable "otel_instrumentations_layer_zip_path" {
+  description = "Path to the zip of the Lambda layer with the OTel instrumentations missing from the community layer (built by scripts/build-otel-instrumentations-layer.py)"
   type        = string
 }
