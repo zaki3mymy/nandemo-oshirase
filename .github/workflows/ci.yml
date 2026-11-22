@@ -14,10 +14,18 @@ on:
       - "uv.lock"
       - ".pre-commit-config.yaml"
       - ".python-version"
+      - "flake.nix"
+      - "flake.lock"
       - ".github/workflows/ci.yml"
   workflow_call:
 
+env:
+  # nix のストアのキャッシュは develop・main への push で CD から呼ばれたときだけ保存する。
+  # PR で作ったキャッシュはその PR でしか使えないので、PR では読むだけにする
+  SAVE_CACHE: ${{ github.event_name != 'pull_request' }}
+
 jobs:
+  # pre-commit は flake.nix の devShell の中で実行する（ローカルと同じ pre-commit・uv を使う）
   pre-commit:
     runs-on: ubuntu-latest
     name: Pre-commit checks
@@ -25,16 +33,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      # flakes は既定で有効。github: の入力の取得には github.token を使う
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+
+      # ツールが変わるのは flake.nix・flake.lock が変わったときだけなので、それをキーにする
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          enable-cache: true
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          save: ${{ env.SAVE_CACHE }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: nix develop -c uv sync --dev
 
       - name: Build docs
-        run: scripts/build-docs.sh dev
+        run: nix develop -c scripts/build-docs.sh dev
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -46,9 +61,10 @@ jobs:
           terraform -chdir=tf/envs/prod init -backend=false
           terraform -chdir=tf/envs/dev init -backend=false
 
-      # pre-commit/action は内部で Node.js 20 向けの actions/cache を使うため、直接実行する
+      # pre-commit/action は内部で Node.js 20 向けの actions/cache を使うため、直接実行する。
+      # terraform は flake に入れていないので、上の setup-terraform で入れたものを使う
       - name: Run pre-commit
-        run: uv run pre-commit run --all-files --show-diff-on-failure --color=always
+        run: nix develop -c pre-commit run --all-files --show-diff-on-failure --color=always
 
   test-unit:
     runs-on: ubuntu-latest
