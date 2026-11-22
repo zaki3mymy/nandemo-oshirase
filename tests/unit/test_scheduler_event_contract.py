@@ -18,13 +18,15 @@ ENV = {"LINE_CHANNEL_TOKEN": "test_token", "LINE_USER_ID": "test_user"}
 SCHEDULE_ARN = "arn:aws:scheduler:ap-northeast-1:123456789012:schedule/g/gomi"
 
 
-def scheduler_event(messages: list[str]) -> Any:
+def scheduler_event(messages: list[str], dry_run: bool = False) -> Any:
     """Return the event the Lambda receives for a schedule created by the CLI.
 
     EventBridge Scheduler replaces the context attribute placeholder in the input
     with the actual schedule ARN before invoking the target.
     """
-    raw = cli.build_input(messages).replace(cli.SCHEDULE_ARN_PLACEHOLDER, SCHEDULE_ARN)
+    raw = cli.build_input(messages, dry_run=dry_run).replace(
+        cli.SCHEDULE_ARN_PLACEHOLDER, SCHEDULE_ARN
+    )
     return json.loads(raw)
 
 
@@ -65,3 +67,23 @@ def test_cli_input_passes_schedule_arn_to_lambda():
     event = scheduler_event(["hello"])
 
     assert event["schedule_arn"] == SCHEDULE_ARN
+
+
+def test_cli_dry_run_input_is_validated_without_sending():
+    event = scheduler_event(["hello"], dry_run=True)
+
+    with patch.dict(os.environ, ENV, clear=True):
+        with (
+            patch.object(lambda_function, "push_messages") as mock_push,
+            patch.object(lambda_function, "validate_push_messages") as mock_validate,
+        ):
+            mock_validate.return_value = {"statusCode": 200, "body": "{}"}
+            result = lambda_function.lambda_handler(event, None)
+
+    assert result["statusCode"] == 200
+    mock_push.assert_not_called()
+    mock_validate.assert_called_once_with([{"type": "text", "text": "hello"}], "test_token")
+
+
+def test_cli_input_without_dry_run_has_no_dry_run_key():
+    assert "dry_run" not in scheduler_event(["hello"])

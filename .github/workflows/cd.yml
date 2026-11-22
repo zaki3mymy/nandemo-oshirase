@@ -69,15 +69,10 @@ jobs:
             echo "env=prod" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
-            # 本番は dry run で呼び出し、LINE には送信しない（LINE の validate API でトークンを確認する）
-            echo 'notify_payload={"message": "GitHub Actions deployment completed!", "dry_run": true}' >> $GITHUB_OUTPUT
-            echo "notify_expected=Dry run: would send 1 message(s)" >> $GITHUB_OUTPUT
           else
             echo "env=dev" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
-            echo 'notify_payload={"message": "GitHub Actions deployment completed!"}' >> $GITHUB_OUTPUT
-            echo "notify_expected=Successfully sent 1 message(s)" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure AWS credentials
@@ -157,12 +152,13 @@ jobs:
           cd ${{ steps.config.outputs.tf_dir }}
           terraform apply -auto-approve
 
-      # dev は LINE への送信まで確認する。本番は dry run で、API キー・API Gateway・Lambda・
-      # LINE の認証情報の読み込みと、LINE の validate API によるトークンの確認までを行う
+      # dev・本番とも dry run で呼び出し、LINE には送信しない。API キー・API Gateway・Lambda・
+      # LINE の認証情報の読み込みと、LINE の validate API によるトークンの確認までを行う。
+      # LINE の送信には月の上限（無料プランは 200 通）があり、デプロイのたびに送ると使い切ってしまうため
       - name: Test POST /notify
         env:
-          PAYLOAD: ${{ steps.config.outputs.notify_payload }}
-          EXPECTED: ${{ steps.config.outputs.notify_expected }}
+          PAYLOAD: '{"message": "GitHub Actions deployment completed!", "dry_run": true}'
+          EXPECTED: "Dry run: would send 1 message(s)"
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
@@ -196,6 +192,7 @@ jobs:
           uv run oshirase --env $ENV disable "$NAME"
           uv run oshirase --env $ENV delete "$NAME"
 
+      # スケジュールから Lambda が呼ばれ、メッセージを確認できるところまでを確かめる。
       - name: Smoke test scheduler fires Lambda
         if: steps.config.outputs.env == 'dev'
         run: |
@@ -204,7 +201,8 @@ jobs:
           read MIN HOUR DAY MONTH YEAR <<< "$(TZ=Asia/Tokyo date -d '+2 min' '+%M %H %d %m %Y')"
           uv run oshirase --env dev add "$NAME" \
             --cron "$((10#$MIN)) $((10#$HOUR)) $((10#$DAY)) $((10#$MONTH)) ? $YEAR" \
-            -m "CI smoke test: scheduler fired (${{ github.sha }})"
+            -m "CI smoke test: scheduler fired (${{ github.sha }})" \
+            --dry-run
 
           LOG_GROUP="/aws/lambda/dev-nandemo-oshirase-function"
           REQUEST_ID=""
@@ -224,7 +222,7 @@ jobs:
               COUNT=$(aws logs filter-log-events \
                 --log-group-name "$LOG_GROUP" \
                 --start-time "$START_MS" \
-                --filter-pattern '"'"$REQUEST_ID"'" "All messages sent successfully"' \
+                --filter-pattern '"'"$REQUEST_ID"'" "Dry run: would send"' \
                 --query 'length(events)' --output text)
               if [ "$COUNT" != "0" ]; then
                 echo "Scheduler fire test passed!"

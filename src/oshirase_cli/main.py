@@ -8,7 +8,7 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -58,6 +58,8 @@ class Reminder:
     timezone: str
     enabled: bool
     messages: list[str]
+    # True のときは、Lambda が LINE の validate API で確認するだけで送信しない
+    dry_run: bool = False
 
     @property
     def description(self) -> str:
@@ -77,15 +79,16 @@ def validate_messages(messages: list[str]) -> list[str]:
     return cleaned
 
 
-def build_input(messages: list[str]) -> str:
-    return json.dumps(
-        {
-            "source": SCHEDULER_EVENT_SOURCE,
-            "messages": messages,
-            "schedule_arn": SCHEDULE_ARN_PLACEHOLDER,
-        },
-        ensure_ascii=False,
-    )
+def build_input(messages: list[str], dry_run: bool = False) -> str:
+    payload: dict[str, Any] = {
+        "source": SCHEDULER_EVENT_SOURCE,
+        "messages": messages,
+        "schedule_arn": SCHEDULE_ARN_PLACEHOLDER,
+    }
+    # dry run でないお知らせの Input は今までと同じにする（キーを付けない）
+    if dry_run:
+        payload["dry_run"] = True
+    return json.dumps(payload, ensure_ascii=False)
 
 
 class ReminderService:
@@ -113,20 +116,18 @@ class ReminderService:
     def role_arn(self) -> str:
         return f"arn:aws:iam::{self.account_id}:role/{self.config.role_name}"
 
-    def _params(
-        self, name: str, expression: str, timezone: str, enabled: bool, messages: list[str]
-    ) -> dict[str, Any]:
+    def _params(self, reminder: Reminder) -> dict[str, Any]:
         return {
-            "Name": name,
+            "Name": reminder.name,
             "GroupName": self.config.group_name,
-            "ScheduleExpression": expression,
-            "ScheduleExpressionTimezone": timezone,
-            "State": "ENABLED" if enabled else "DISABLED",
+            "ScheduleExpression": reminder.expression,
+            "ScheduleExpressionTimezone": reminder.timezone,
+            "State": "ENABLED" if reminder.enabled else "DISABLED",
             "FlexibleTimeWindow": {"Mode": "OFF"},
             "Target": {
                 "Arn": self.function_arn,
                 "RoleArn": self.role_arn,
-                "Input": build_input(messages),
+                "Input": build_input(reminder.messages, reminder.dry_run),
                 # Schedulerのリトライは「invoke自体の失敗」が対象。Lambdaは非同期invokeなので
                 # 二重送信にはならない。送信失敗時のリトライはLambda側の設定で制御する。
                 "RetryPolicy": {"MaximumRetryAttempts": 3, "MaximumEventAgeInSeconds": 3600},
@@ -150,6 +151,8 @@ class ReminderService:
             timezone=res.get("ScheduleExpressionTimezone", "UTC"),
             enabled=res.get("State") == "ENABLED",
             messages=list(payload.get("messages", [])),
+            # Lambda と同じく、真偽値の true のときだけ dry run とみなす
+            dry_run=payload.get("dry_run") is True,
         )
 
     def list_all(self) -> list[Reminder]:
@@ -159,12 +162,12 @@ class ReminderService:
             names.extend(s["Name"] for s in page["Schedules"])
         return [self.get(n) for n in sorted(names)]
 
-    def add(self, name: str, expression: str, messages: list[str]) -> Reminder:
-        reminder = Reminder(name, expression, self.config.timezone, True, messages)
+    def add(
+        self, name: str, expression: str, messages: list[str], dry_run: bool = False
+    ) -> Reminder:
+        reminder = Reminder(name, expression, self.config.timezone, True, messages, dry_run)
         try:
-            self.scheduler.create_schedule(
-                **self._params(name, expression, self.config.timezone, True, messages)
-            )
+            self.scheduler.create_schedule(**self._params(reminder))
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConflictException":
                 raise CliError(
@@ -174,15 +177,7 @@ class ReminderService:
         return reminder
 
     def save(self, reminder: Reminder) -> Reminder:
-        self.scheduler.update_schedule(
-            **self._params(
-                reminder.name,
-                reminder.expression,
-                reminder.timezone,
-                reminder.enabled,
-                reminder.messages,
-            )
-        )
+        self.scheduler.update_schedule(**self._params(reminder))
         return reminder
 
     def delete(self, name: str) -> None:
@@ -195,11 +190,13 @@ class ReminderService:
 
     def send_now(self, name: str) -> str:
         reminder = self.get(name)
-        payload = {
+        payload: dict[str, Any] = {
             "source": SCHEDULER_EVENT_SOURCE,
             "messages": reminder.messages,
             "schedule_arn": f"manual:{name}",
         }
+        if reminder.dry_run:
+            payload["dry_run"] = True
         res = self.lambda_client.invoke(
             FunctionName=self.config.function_name,
             InvocationType="RequestResponse",
@@ -261,11 +258,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "-m", "--message", action="append", required=True, help="メッセージ（複数指定可）"
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="時刻になっても LINE に送信せず、validate API での確認だけにする（動作確認用）",
+    )
 
     p = sub.add_parser("update", help="お知らせを変更する（指定した項目のみ）")
     p.add_argument("name")
     _add_schedule_options(p)
     p.add_argument("-m", "--message", action="append", help="メッセージ（指定すると全置換）")
+    p.add_argument(
+        "--dry-run",
+        action=argparse.BooleanOptionalAction,
+        help="dry run にする（--no-dry-run で解除）",
+    )
 
     sub.add_parser("list", help="お知らせの一覧を表示する")
 
@@ -284,8 +291,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def format_reminder(r: Reminder) -> str:
     state = "有効" if r.enabled else "停止中"
+    dry_run = " [dry run]" if r.dry_run else ""
     tz = "" if r.timezone == "Asia/Tokyo" else f" ({r.timezone})"
-    lines = [f"{r.name}  [{state}]  {r.description}{tz}"]
+    lines = [f"{r.name}  [{state}]{dry_run}  {r.description}{tz}"]
     lines.extend(f"    {m}" for m in r.messages)
     return "\n".join(lines)
 
@@ -303,7 +311,9 @@ def run(args: argparse.Namespace, service: ReminderService) -> str:
 
     if cmd == "add":
         expression = _expression_from_args(args)
-        reminder = service.add(name, expression, validate_messages(args.message))
+        reminder = service.add(
+            name, expression, validate_messages(args.message), dry_run=args.dry_run
+        )
         return "追加しました:\n" + format_reminder(reminder)
 
     if cmd == "update":
@@ -320,10 +330,15 @@ def run(args: argparse.Namespace, service: ReminderService) -> str:
         else:
             expression = current.expression
         messages = validate_messages(args.message) if args.message else current.messages
-        if expression == current.expression and messages == current.messages:
+        dry_run = current.dry_run if args.dry_run is None else args.dry_run
+        if (
+            expression == current.expression
+            and messages == current.messages
+            and dry_run == current.dry_run
+        ):
             raise CliError("変更内容がありません（--at / --weekly / -m などを指定してください）")
         reminder = service.save(
-            Reminder(name, expression, current.timezone, current.enabled, messages)
+            Reminder(name, expression, current.timezone, current.enabled, messages, dry_run)
         )
         return "変更しました:\n" + format_reminder(reminder)
 
@@ -334,9 +349,7 @@ def run(args: argparse.Namespace, service: ReminderService) -> str:
     if cmd in ("enable", "disable"):
         current = service.get(name)
         enabled = cmd == "enable"
-        reminder = service.save(
-            Reminder(name, current.expression, current.timezone, enabled, current.messages)
-        )
+        reminder = service.save(replace(current, enabled=enabled))
         return ("有効にしました:\n" if enabled else "停止しました:\n") + format_reminder(reminder)
 
     if cmd == "delete":
