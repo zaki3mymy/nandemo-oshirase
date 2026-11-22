@@ -54,7 +54,7 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 - メトリクスは累積値（cumulative）で送ります。Lambda の実行環境が作り直されるとカウンタは 0 から数え直すので、Grafana では `increase()` や `rate()` で集計してください。
 - ログは、アプリの `logging` のログを `opentelemetry-instrumentation-logging`（自前の計装のレイヤー）が OTel のログにして送ります。ログにはそのときの span の `trace_id`・`span_id` が付くので、Grafana でトレースとログを行き来できます。CloudWatch Logs にも今までどおり出ます。
 - Lambda の計装は、実行の終わりにトレースとメトリクスしか flush しません。ログは SDK がまとめて送るので、そのままでは応答を返したあとに実行環境が凍結され、次の呼び出しまで送られない（実行環境が止まると失われる）ことがあります。そのため、`lambda_handler` の最後でログを flush しています（`lambda_function.py` の `flush_logs`）。
-- ログの本文はそのまま送ります。送り先の LINE のユーザー ID（`user_id=...`・webhook の `userId=...`）も含まれます。
+- ログの本文は、ARN の中の AWS のアカウント ID を Collector で `***` に置き換えてから送ります（`transform/redact_log_body`。例: スケジュールからの呼び出しのログの `schedule_arn`）。CloudWatch Logs には元のまま出ます。ほかはそのまま送るので、送り先の LINE のユーザー ID（`user_id=...`・webhook の `userId=...`）も含まれます。
 
 ### 自前の計装のレイヤー
 

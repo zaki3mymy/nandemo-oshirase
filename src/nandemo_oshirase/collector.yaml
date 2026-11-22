@@ -38,6 +38,16 @@ processors:
         action: delete
       - key: cloud.resource_id
         action: delete
+  # ログの本文の ARN にある AWS のアカウント ID を *** に置き換える（本文はアプリのまま送るため、
+  # 属性のように消せない。例: スケジュールからの呼び出しのログの schedule_arn）。
+  # CloudWatch Logs には元のまま出る。$$ は Collector の設定の $ のエスケープ
+  # （"$${1}" は OTTL には "${1}"、つまり 1 番目のキャプチャーとして渡る）
+  transform/redact_log_body:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "(arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:)[0-9]{12}", "$${1}***")
   # Lambda の応答を返してから送るようにする（実行の終わりに Grafana Cloud への送信を待たない）。
   # 送り終わるまで実行環境は止められない。パイプラインの最後に置く
   decouple:
@@ -62,5 +72,5 @@ service:
     # Grafana Cloud では Loki に入り、トレース ID・span ID でトレースと紐づく
     logs:
       receivers: [otlp]
-      processors: [resource/redact, decouple]
+      processors: [resource/redact, transform/redact_log_body, decouple]
       exporters: [otlphttp/grafana_cloud]
