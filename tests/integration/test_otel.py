@@ -19,6 +19,9 @@ PROMETHEUS_URL = "http://localhost:9090"
 LOKI_URL = "http://localhost:3100"
 OTEL_COLLECTOR_URL = "http://localhost:13133"
 
+# テレメトリが届くのを待つときの、問い合わせの間隔（秒）
+POLL_INTERVAL = 0.5
+
 
 def _get(url: str) -> int:
     try:
@@ -68,18 +71,29 @@ def _wait_for_prometheus(query: str, timeout: int = 30) -> bool:
             data = json.loads(res.read())
         if data["data"]["result"]:
             return True
-        time.sleep(2)
+        time.sleep(POLL_INTERVAL)
     return False
+
+
+def _wait_for_jaeger_traces(path: str, timeout: int = 15) -> list[dict]:
+    """Jaeger の API（path）にトレースが届くまで問い合わせ、届いたトレースを返す（無ければ空）。"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"{JAEGER_URL}{path}", timeout=5) as res:
+                data = json.loads(res.read())
+            if data["data"]:
+                return data["data"]
+        except urllib.error.HTTPError:
+            pass  # まだ Jaeger に届いていない（トレースやサービスが無いと 404 などが返る）
+        time.sleep(POLL_INTERVAL)
+    return []
 
 
 def test_trace_recorded_in_jaeger():
     _invoke_lambda(["結合テスト用メッセージ"])
-    time.sleep(3)
-    with urllib.request.urlopen(
-        f"{JAEGER_URL}/api/traces?service=nandemo-oshirase&limit=1", timeout=5
-    ) as res:
-        data = json.loads(res.read())
-    assert len(data["data"]) > 0
+    traces = _wait_for_jaeger_traces("/api/traces?service=nandemo-oshirase&limit=1")
+    assert len(traces) > 0
 
 
 def test_metrics_recorded_in_prometheus():
@@ -112,13 +126,10 @@ def test_trace_linked_from_external_caller():
     with urllib.request.urlopen(req, timeout=10) as res:
         assert res.status == 200
 
-    time.sleep(3)
+    traces = _wait_for_jaeger_traces(f"/api/traces/{trace_id}")
 
-    with urllib.request.urlopen(f"{JAEGER_URL}/api/traces/{trace_id}", timeout=5) as res:
-        data = json.loads(res.read())
-
-    assert len(data["data"]) > 0, "trace_id が Jaeger に記録されていない"
-    processes = data["data"][0]["processes"]
+    assert len(traces) > 0, "trace_id が Jaeger に記録されていない"
+    processes = traces[0]["processes"]
     service_names = [p["serviceName"] for p in processes.values()]
     assert "nandemo-oshirase" in service_names
 
@@ -152,6 +163,6 @@ def test_logs_recorded_in_loki_with_trace_id():
         lines = [line for stream in data["data"]["result"] for _, line in stream["values"]]
         if lines:
             break
-        time.sleep(2)
+        time.sleep(POLL_INTERVAL)
 
     assert "Lambda invoked" in lines, f"trace_id={trace_id} のログが Loki に無い: {lines}"
