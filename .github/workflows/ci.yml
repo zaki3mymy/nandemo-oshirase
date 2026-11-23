@@ -181,24 +181,22 @@ jobs:
       - name: Create local env file
         run: cp .env.example .env.local
 
-      # Lambda のイメージ（lambda・lambda-quota で共通）を 1 回だけビルドし、両方のタグを付ける
-      # （compose でビルドすると、サービスごとにイメージの書き出しをする）。
-      # タグは compose が付ける名前（<プロジェクト名>-<サービス名>）に合わせ、compose ではビルドしない。
+      # Lambda 以外のサービスの起動（イメージの pull が大半）と、Lambda のイメージのビルドを同時に行い、
+      # 両方が終わってから Lambda を起動する。
+      # Lambda のイメージ（lambda・lambda-quota で共通）は 1 回だけビルドし、compose が付ける名前
+      # （<プロジェクト名>-<サービス名>）で両方のタグを付ける（compose でビルドすると、サービスごとに書き出す）。
       # ビルドのキャッシュ（type=gha）は使わない。GitHub Actions のキャッシュから層（pip install の約 160MB）を
       # ダウンロードして展開するほうが、ベースイメージを取得して pip install し直すより遅かった（28 秒と 15 秒）
-      - name: Build the Lambda image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: Containerfile
-          tags: |
-            nandemo-oshirase-lambda:latest
-            nandemo-oshirase-lambda-quota:latest
-          load: true
-
-      # 上でビルドしたイメージを使う（--no-build なので、イメージが無ければ失敗する）
       - name: Start local stack
-        run: docker compose -f podman-compose.yml up -d --no-build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki lambda lambda-quota
+        run: |
+          docker compose -f podman-compose.yml up -d --no-build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki &
+          services=$!
+          docker build -f Containerfile -t nandemo-oshirase-lambda:latest -t nandemo-oshirase-lambda-quota:latest . &
+          build=$!
+          # どちらかが失敗したら、wait が失敗の終了コードを返し、ステップが失敗する
+          wait "$services"
+          wait "$build"
+          docker compose -f podman-compose.yml up -d --no-build lambda lambda-quota
 
       - name: Wait for services to be healthy
         run: |
