@@ -18,3 +18,8 @@ output "scheduler_role_arn" {
   description = "IAM role ARN used by EventBridge Scheduler to invoke the Lambda function"
   value       = module.notify.scheduler_role_arn
 }
+
+output "quota_lambda_function_name" {
+  description = "Name of the Lambda function that records the LINE message quota"
+  value       = module.nandemo_oshirase_quota.lambda_function_name
+}

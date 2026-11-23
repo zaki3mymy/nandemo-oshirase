@@ -19,6 +19,8 @@ API Gateway がログを CloudWatch Logs に書くためのロールは、AWS �
 
 `AWS_ROLE_ARN` のロールには、Terraform が作るリソースを管理する権限が必要です。[再送](../README.md#再送冪等性)のために DynamoDB のテーブル（`{env}-nandemo-oshirase-retry-keys`）を作ります。ロールの権限を絞っている場合は、`dynamodb:CreateTable`、`DescribeTable`、`UpdateTable`、`DeleteTable`、`UpdateTimeToLive`、`DescribeTimeToLive`、`DescribeContinuousBackups`、`ListTagsOfResource`、`TagResource`、`UntagResource` も許可してください。
 
+LINE の利用数を取得する Lambda（[README](../README.md#line-の利用数の監視)）のために、`{env}-nandemo-oshirase-quota` の関数・IAM ロール・ロググループを作ります。prod では、さらにスケジュールグループ（`prod-nandemo-oshirase-quota`）・スケジュール・Scheduler 用の IAM ロールを作ります。また、CD は apply のあとにこの関数を1回 invoke して動作を確かめるので、ロールの権限を絞っている場合は `lambda:InvokeFunction`（`{env}-nandemo-oshirase-quota`）も許可してください。
+
 ## LINE の認証情報（SSM Parameter Store）
 
 LINE のチャネルアクセストークンと通知先のユーザーIDは、環境ごとに SSM Parameter Store の SecureString（AWS管理キー `aws/ssm`）に置き、Lambda が実行時に読み込みます。値は Terraform の state、Lambda の環境変数、GitHub の Secrets のいずれにも置きません。パラメータは Terraform の外で作成してください。
@@ -27,6 +29,8 @@ LINE のチャネルアクセストークンと通知先のユーザーIDは、�
 |---|---|
 | dev | `/app/nandemo_oshirase/dev/line_channel_token`、`/app/nandemo_oshirase/dev/line_user_id` |
 | prod | `/app/nandemo_oshirase/prod/line_channel_token`、`/app/nandemo_oshirase/prod/line_user_id` |
+
+LINE の利用数を取得する Lambda（`{env}-nandemo-oshirase-quota`）も、同じ環境の `line_channel_token` を読みます（`line_user_id` は読みません）。
 
 ```bash
 aws ssm put-parameter --type SecureString --name /app/nandemo_oshirase/prod/line_channel_token --value '...'
@@ -48,6 +52,7 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 | ログ | Grafana Cloud（Loki） | Grafana の Explore（データソース: Loki）。`{service_name="nandemo-oshirase"}` で絞り込む |
 
 - Collectorの設定は `src/nandemo_oshirase/collector.yaml` にまとめており、デプロイ時にLambdaのデプロイパッケージへ含まれます。
+- LINE の利用数を取得する Lambda（`{env}-nandemo-oshirase-quota`）も同じ構成で、`service.name` は `nandemo-oshirase-quota` です。Collector の設定は `src/nandemo_oshirase_quota/collector.yaml`（送信の Lambda と同じ内容）です。
 - 環境は、リソース属性 `deployment.environment.name`（と `deployment.environment`）の `dev`・`prod` で区別します。
 - コールドスタートのときは、実行環境の初期化が `init <関数名>`（属性 `faas.coldstart=true`）という span になり、そのとき呼ばれた実行と同じトレースに入ります（Collector の `telemetryapi` receiver と `coldstart` processor）。また、初回の boto3 のクライアントの作成は `create_ssm_client`・`create_dynamodb_client` という span になります。
 - Lambda の計装が付ける属性のうち、API Gateway のホスト（`net.host.name`）、AWS のアカウント ID（`cloud.account.id`）、関数の ARN（`cloud.resource_id`）は、Collector で消してから送ります（`attributes/redact`・`resource/redact`）。

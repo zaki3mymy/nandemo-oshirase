@@ -99,6 +99,20 @@ CLI を実行する AWS 認証情報に必要な IAM 権限は、[docs/deploymen
 - 送信に失敗すると Lambda はエラーになり、1回だけリトライします。1時間以上遅れたお知らせは送りません。
 - リトライでは、[再送](#再送冪等性)と同じく送信済みのメッセージを送りません。
 
+## LINE の利用数の監視
+
+LINE の月の送信数の上限（無料プランは 200 通）に近づいていることに気づけるよう、当月の利用数と上限を Grafana Cloud で監視しています。
+
+- 別の Lambda（`{env}-nandemo-oshirase-quota`、コードは `src/nandemo_oshirase_quota`）が、LINE の [quota](https://developers.line.biz/ja/reference/messaging-api/#get-quota) と [quota/consumption](https://developers.line.biz/ja/reference/messaging-api/#get-consumption) の API を呼び、OTel のメトリクスとして送ります。どちらも読み取りだけなので、送信数は使いません。
+
+  | メトリクス（Prometheus） | 値 |
+  |---|---|
+  | `line_quota_consumption` | 当月に送ったメッセージの数（概算。LINE Official Account Manager から送った分も含む） |
+  | `line_quota_limit` | 当月の上限の目安（上限が設定されていないときは送らない） |
+
+- 定時実行は **prod だけ**で、毎日 23:55（Asia/Tokyo）に取得します。dev と prod は同じ LINE チャネル（同じ上限）を使っているためです。dev には定時実行がなく、CD のデプロイのあとに1回呼ぶだけです。
+- dev と prod は同じ値を送るので、Grafana では **環境をまたいで足さず**、`deployment_environment_name="prod"` の値だけを使います。値は Lambda の実行環境ごとに別の系列（`service_instance_id`）になるので、`max by (deployment_environment_name) (...)` でまとめてから最新の値を取ります。
+
 ## ドキュメント
 
 - [デプロイ](docs/deployment.md)：デプロイの前提、GitHub Secrets、LINE の認証情報、本番のテレメトリ、CLI の IAM 権限
