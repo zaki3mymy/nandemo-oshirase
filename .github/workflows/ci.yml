@@ -164,8 +164,24 @@ jobs:
       - name: Create local env file
         run: cp .env.example .env.local
 
+      # Lambda のイメージ（lambda・lambda-quota で共通）を、ビルドのキャッシュ（GitHub Actions のキャッシュ）を使ってビルドする。
+      # ランナーの Docker は containerd のイメージストアを使うので、既定の docker ドライバーのままキャッシュを読み書きできる。
+      # タグは compose が付ける名前（<プロジェクト名>-<サービス名>）に合わせ、compose ではビルドしない
+      - name: Build the Lambda image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Containerfile
+          tags: |
+            nandemo-oshirase-lambda:latest
+            nandemo-oshirase-lambda-quota:latest
+          load: true
+          cache-from: type=gha,scope=lambda-image
+          cache-to: ${{ env.SAVE_CACHE == 'true' && 'type=gha,scope=lambda-image,mode=max' || '' }}
+
+      # 上でビルドしたイメージを使う（--no-build なので、イメージが無ければ失敗する）
       - name: Start local stack
-        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki lambda lambda-quota
+        run: docker compose -f podman-compose.yml up -d --no-build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki lambda lambda-quota
 
       - name: Wait for services to be healthy
         run: |
