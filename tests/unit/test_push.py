@@ -1,5 +1,3 @@
-"""Tests for push_messages function."""
-
 import json
 import os
 from unittest.mock import MagicMock, patch
@@ -8,8 +6,6 @@ from nandemo_oshirase.lambda_function import LineMessage, push_messages
 
 
 class TestPushMessages:
-    """Test pushing messages to LINE API."""
-
     def test_push_messages_uses_stub_base_url_when_set(self):
         messages: list[LineMessage] = [{"type": "text", "text": "Hello"}]
 

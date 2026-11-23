@@ -11,7 +11,6 @@ resource "aws_scheduler_schedule_group" "reminders" {
   name = "${local.name_prefix}-reminders"
 }
 
-# EventBridge Scheduler が Lambda を invoke するためのロール
 resource "aws_iam_role" "scheduler" {
   name = "${local.name_prefix}-scheduler-role"
 

@@ -1,16 +1,16 @@
-"""Tests for lambda_handler function."""
-
 import json
 import os
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
-from nandemo_oshirase.lambda_function import LambdaEvent, lambda_handler
+import pytest
+from opentelemetry._logs._internal import ProxyLoggerProvider
+from opentelemetry.sdk._logs import LoggerProvider
+
+from nandemo_oshirase.lambda_function import LOG_FLUSH_TIMEOUT_MILLIS, LambdaEvent, lambda_handler
 
 
 class TestLambdaHandlerSuccess:
-    """Test successful lambda handler execution."""
-
     def test_lambda_handler_success_single_message(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
@@ -73,8 +73,6 @@ class TestLambdaHandlerSuccess:
 
 
 class TestLambdaHandlerNoMessages:
-    """Test lambda handler with no valid messages."""
-
     def test_lambda_handler_no_messages_empty_list(self):
         event: LambdaEvent = {"body": json.dumps({"messages": []})}
 
@@ -107,8 +105,6 @@ class TestLambdaHandlerNoMessages:
 
 
 class TestLambdaHandlerMissingEnv:
-    """Test lambda handler with missing environment variables."""
-
     def test_lambda_handler_missing_token(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
@@ -142,8 +138,6 @@ class TestLambdaHandlerMissingEnv:
 
 
 class TestLambdaHandlerInvalidRequest:
-    """Test lambda handler with invalid request."""
-
     def test_lambda_handler_invalid_json(self):
         event: LambdaEvent = {"body": "not valid json"}
 
@@ -158,8 +152,6 @@ class TestLambdaHandlerInvalidRequest:
 
 
 class TestLambdaHandlerDocs:
-    """Test GET /docs endpoint."""
-
     docs_html = Path(__file__).parent.parent.parent / "src" / "nandemo_oshirase" / "docs.html"
 
     def setup_method(self):
@@ -186,8 +178,6 @@ class TestLambdaHandlerDocs:
 
 
 class TestLambdaHandlerWebhook:
-    """Test routing to webhook handler."""
-
     def test_routes_post_webhook_to_handle_webhook(self):
         event: LambdaEvent = {
             "httpMethod": "POST",
@@ -201,8 +191,6 @@ class TestLambdaHandlerWebhook:
 
 
 class TestLambdaHandlerPushError:
-    """Test lambda handler when push_messages fails."""
-
     def test_lambda_handler_push_error(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello"})}
 
@@ -226,8 +214,6 @@ class TestLambdaHandlerPushError:
 
 
 class TestLambdaHandlerDryRun:
-    """Test POST /notify with dry_run."""
-
     def test_dry_run_does_not_push(self):
         event: LambdaEvent = {"body": json.dumps({"message": "Hello", "dry_run": True})}
 
@@ -421,3 +407,41 @@ class TestLambdaHandlerDryRun:
                 lambda_handler(event, None)
 
                 mock_hist.record.assert_called_once_with(2)
+
+
+class TestLambdaHandlerFlushLogs:
+    def test_flushes_logs_after_handling(self):
+        event: LambdaEvent = {"httpMethod": "POST", "path": "/webhook", "body": '{"events": []}'}
+
+        provider = MagicMock(spec=LoggerProvider)
+        with patch("nandemo_oshirase.lambda_function.get_logger_provider", return_value=provider):
+            lambda_handler(event, None)
+
+        provider.force_flush.assert_called_once_with(timeout_millis=LOG_FLUSH_TIMEOUT_MILLIS)
+
+    def test_flushes_logs_even_when_handling_raises(self):
+        event: LambdaEvent = {"httpMethod": "POST", "path": "/webhook", "body": '{"events": []}'}
+
+        provider = MagicMock(spec=LoggerProvider)
+        with (
+            patch("nandemo_oshirase.lambda_function.get_logger_provider", return_value=provider),
+            patch(
+                "nandemo_oshirase.lambda_function.handle_webhook", side_effect=RuntimeError("boom")
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            lambda_handler(event, None)
+
+        provider.force_flush.assert_called_once()
+
+    def test_skips_flush_without_sdk(self):
+        # SDK が設定されていないときは、API の ProxyLoggerProvider が返る
+        event: LambdaEvent = {"httpMethod": "POST", "path": "/webhook", "body": '{"events": []}'}
+
+        with patch(
+            "nandemo_oshirase.lambda_function.get_logger_provider",
+            return_value=ProxyLoggerProvider(),
+        ):
+            result = lambda_handler(event, None)
+
+        assert result["statusCode"] == 200

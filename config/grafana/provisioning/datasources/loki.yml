@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # ログの trace_id（OTLP で受けたログでは structured metadata）から、Jaeger のトレースを開く
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: jaeger
+          # $$ はプロビジョニングの環境変数の展開を避けるためのエスケープ
+          url: "$${__value.raw}"

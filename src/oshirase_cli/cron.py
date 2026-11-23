@@ -5,6 +5,7 @@ Day-of-week is 1-7 (SUN-SAT). Either day-of-month or day-of-week must be ``?``.
 """
 
 import re
+from typing import NamedTuple
 
 # 曜日の入力（英語3文字・日本語1文字）→ EventBridgeの曜日番号（SUN=1 ... SAT=7）
 _DAY_ALIASES: dict[str, int] = {
@@ -30,15 +31,19 @@ _AT_PATTERN = re.compile(r"^(\d{1,2}):(\d{2})$")
 _CRON_PATTERN = re.compile(r"^cron\((\S+) (\S+) (\S+) (\S+) (\S+) (\S+)\)$")
 
 
-def parse_at(at: str) -> tuple[int, int]:
-    """Parse ``HH:MM`` into (hour, minute)."""
+class TimeOfDay(NamedTuple):
+    hour: int
+    minute: int
+
+
+def parse_at(at: str) -> TimeOfDay:
     m = _AT_PATTERN.match(at.strip())
     if not m:
         raise ValueError(f"時刻は HH:MM 形式で指定してください: {at!r}")
     hour, minute = int(m.group(1)), int(m.group(2))
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         raise ValueError(f"時刻が範囲外です: {at!r}")
-    return hour, minute
+    return TimeOfDay(hour, minute)
 
 
 def parse_days(days: str) -> list[int]:
@@ -56,14 +61,13 @@ def parse_days(days: str) -> list[int]:
     return sorted(result)
 
 
-def build_expression(
+def build_cron_expression(
     at: str,
     *,
     daily: bool = False,
     weekly: str | None = None,
     nth: int | None = None,
 ) -> str:
-    """Build a cron expression from friendly options."""
     hour, minute = parse_at(at)
     if daily == (weekly is not None):
         raise ValueError("--daily と --weekly のどちらか一方を指定してください")
@@ -90,7 +94,6 @@ def build_expression(
 
 
 def replace_time(expression: str, at: str) -> str:
-    """Replace the time-of-day of an existing cron expression."""
     hour, minute = parse_at(at)
     m = _CRON_PATTERN.match(expression)
     if not m or not (m.group(1).isdigit() and m.group(2).isdigit()):

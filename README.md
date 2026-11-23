@@ -37,6 +37,7 @@ curl -X POST <ENDPOINT> \
 
 - トークンが無効なときなど、LINE の validate API がエラーを返したときは、そのステータスコードと `{"error": "..."}` を返します。
 - 送り先（`LINE_USER_ID`）が正しいかは確認できません。
+- validate API は送信ではないので、LINE の月の送信数（無料プランは 200 通）を使いません。CD の動作確認は、dev・本番とも dry run で行います。
 
 ### 再送（冪等性）
 
@@ -77,21 +78,40 @@ uv run oshirase delete gomi-moeru
 
 # 今すぐ送って動作確認
 uv run oshirase send gomi-moeru
+
+# dry run（時刻になっても LINE に送信せず、validate API での確認だけにする）
+uv run oshirase --env dev add check --daily --at 9:00 -m "動作確認" --dry-run
+uv run oshirase --env dev update check --no-dry-run  # 解除（--dry-run で再び dry run）
 ```
 
 - 曜日は `mon,thu` のほか `月,木` でも指定できます。
 - 名前に使えるのは英数字と `- _ .` だけです（EventBridge Scheduler の制約）。
 - 「第1・第3水曜」のように1つの式で表せないものは、`shigen-1` と `shigen-3` のように2件に分けて登録します。
 - 時刻はタイムゾーン `Asia/Tokyo` で解釈します。変えたい場合は `--timezone` を指定します。
+- `--dry-run` のお知らせは、`list` と `show` で `[dry run]` と表示されます。`send` でも送信しません。dry run は LINE の月の送信数を使わないので、CD の動作確認はこれで行います。
 - 共通オプション（`--env dev`、`--profile`、`--region`）はサブコマンドより前に書きます。例：`uv run oshirase --env dev list`。`OSHIRASE_ENV` 環境変数で既定の環境を変えることもできます。
 
 CLI を実行する AWS 認証情報に必要な IAM 権限は、[docs/deployment.md](docs/deployment.md#cli-の実行に必要な-iam-権限) にまとめています。
 
 ### 仕組み
 
-- スケジュールは Lambda に `{"source": "nandemo-oshirase.scheduler", "messages": [...]}` を非同期で invoke します。
+- スケジュールは Lambda に `{"source": "nandemo-oshirase.scheduler", "messages": [...]}` を非同期で invoke します。`--dry-run` のお知らせは `"dry_run": true` も付き、Lambda は [POST /notify の dry run](#使い方) と同じく validate API で確認するだけで送信しません。
 - 送信に失敗すると Lambda はエラーになり、1回だけリトライします。1時間以上遅れたお知らせは送りません。
 - リトライでは、[再送](#再送冪等性)と同じく送信済みのメッセージを送りません。
+
+## LINE の利用数の監視
+
+LINE の月の送信数の上限（無料プランは 200 通）に近づいていることに気づけるよう、当月の利用数と上限を Grafana Cloud で監視しています。
+
+- 別の Lambda（`{env}-nandemo-oshirase-quota`、コードは `src/nandemo_oshirase_quota`）が、LINE の [quota](https://developers.line.biz/ja/reference/messaging-api/#get-quota) と [quota/consumption](https://developers.line.biz/ja/reference/messaging-api/#get-consumption) の API を呼び、OTel のメトリクスとして送ります。どちらも読み取りだけなので、送信数は使いません。
+
+  | メトリクス（Prometheus） | 値 |
+  |---|---|
+  | `line_quota_consumption` | 当月に送ったメッセージの数（概算。LINE Official Account Manager から送った分も含む） |
+  | `line_quota_limit` | 当月の上限の目安（上限が設定されていないときは送らない） |
+
+- 定時実行は **prod だけ**で、毎日 23:55（Asia/Tokyo）に取得します。dev と prod は同じ LINE チャネル（同じ上限）を使っているためです。dev には定時実行がなく、CD のデプロイのあとに1回呼ぶだけです。
+- dev と prod は同じ値を送るので、Grafana では **環境をまたいで足さず**、`deployment_environment_name="prod"` の値だけを使います。値は Lambda の実行環境ごとに別の系列（`service_instance_id`）になるので、`max by (deployment_environment_name) (...)` でまとめてから最新の値を取ります。
 
 ## ドキュメント
 

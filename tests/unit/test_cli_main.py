@@ -62,19 +62,19 @@ def stubs() -> Iterator[Stubs]:
         s3.assert_no_pending_responses()
 
 
-def input_json(messages: list[str]) -> str:
-    return json.dumps(
-        {
-            "source": SCHEDULER_EVENT_SOURCE,
-            "messages": messages,
-            "schedule_arn": SCHEDULE_ARN_PLACEHOLDER,
-        },
-        ensure_ascii=False,
-    )
+def input_json(messages: list[str], dry_run: bool = False) -> str:
+    payload: dict[str, Any] = {
+        "source": SCHEDULER_EVENT_SOURCE,
+        "messages": messages,
+        "schedule_arn": SCHEDULE_ARN_PLACEHOLDER,
+    }
+    if dry_run:
+        payload["dry_run"] = True
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def schedule_params(
-    name: str, expr: str, messages: list[str], state: str = "ENABLED"
+    name: str, expr: str, messages: list[str], state: str = "ENABLED", dry_run: bool = False
 ) -> dict[str, Any]:
     return {
         "Name": name,
@@ -86,14 +86,19 @@ def schedule_params(
         "Target": {
             "Arn": FUNCTION_ARN,
             "RoleArn": ROLE_ARN,
-            "Input": input_json(messages),
+            "Input": input_json(messages, dry_run),
             "RetryPolicy": {"MaximumRetryAttempts": 3, "MaximumEventAgeInSeconds": 3600},
         },
     }
 
 
 def get_response(
-    name: str, expr: str, messages: list[str], state: str = "ENABLED", **overrides: Any
+    name: str,
+    expr: str,
+    messages: list[str],
+    state: str = "ENABLED",
+    dry_run: bool = False,
+    **overrides: Any,
 ) -> dict[str, Any]:
     res: dict[str, Any] = {
         "Name": name,
@@ -102,7 +107,11 @@ def get_response(
         "ScheduleExpressionTimezone": "Asia/Tokyo",
         "State": state,
         "FlexibleTimeWindow": {"Mode": "OFF"},
-        "Target": {"Arn": FUNCTION_ARN, "RoleArn": ROLE_ARN, "Input": input_json(messages)},
+        "Target": {
+            "Arn": FUNCTION_ARN,
+            "RoleArn": ROLE_ARN,
+            "Input": input_json(messages, dry_run),
+        },
     }
     res.update(overrides)
     return res
@@ -205,6 +214,20 @@ class TestAdd:
         assert "範囲外" in capsys.readouterr().err
 
 
+class TestAddDryRun:
+    def test_dry_run(self, stubs, capsys):
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "create_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("ci", "cron(0 21 ? * MON *)", ["テスト"], dry_run=True),
+        )
+
+        argv = ["add", "ci", "--weekly", "mon", "--at", "21:00", "-m", "テスト", "--dry-run"]
+        assert main(argv, stubs.service) == 0
+        assert "ci  [有効] [dry run]  毎週月曜 21:00" in capsys.readouterr().out
+
+
 class TestList:
     def test_empty(self, stubs, capsys):
         stubs.scheduler.add_response("list_schedules", {"Schedules": []}, {"GroupName": GROUP})
@@ -239,6 +262,20 @@ class TestShow:
 
         assert main(["show", "a"], stubs.service) == 0
         assert "式: cron(30 7 * * ? *)  タイムゾーン: Asia/Tokyo" in capsys.readouterr().out
+
+    def test_dry_run(self, stubs, capsys):
+        expect_get(stubs, "a", get_response("a", "cron(30 7 * * ? *)", ["朝"], dry_run=True))
+
+        assert main(["show", "a"], stubs.service) == 0
+        assert "a  [有効] [dry run]  毎日 07:30" in capsys.readouterr().out
+
+    def test_dry_run_must_be_boolean_true(self, stubs, capsys):
+        res = get_response("a", "cron(30 7 * * ? *)", ["朝"])
+        res["Target"]["Input"] = json.dumps({"messages": ["朝"], "dry_run": "true"})
+        expect_get(stubs, "a", res)
+
+        assert main(["show", "a"], stubs.service) == 0
+        assert "dry run" not in capsys.readouterr().out
 
     def test_missing_input_and_timezone(self, stubs, capsys):
         res = get_response("a", "cron(30 7 * * ? *)", [])
@@ -305,6 +342,55 @@ class TestUpdate:
 
         assert main(["update", "gomi", "-m", "変更"], stubs.service) == 0
 
+    def test_turn_on_dry_run(self, stubs, capsys):
+        self._expect_current(stubs)
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "update_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("gomi", "cron(0 21 ? * MON *)", ["燃える"], dry_run=True),
+        )
+
+        assert main(["update", "gomi", "--dry-run"], stubs.service) == 0
+        assert "[dry run]" in capsys.readouterr().out
+
+    def test_turn_off_dry_run(self, stubs, capsys):
+        expect_get(
+            stubs,
+            "gomi",
+            get_response("gomi", "cron(0 21 ? * MON *)", ["燃える"], dry_run=True),
+        )
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "update_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("gomi", "cron(0 21 ? * MON *)", ["燃える"]),
+        )
+
+        assert main(["update", "gomi", "--no-dry-run"], stubs.service) == 0
+        assert "[dry run]" not in capsys.readouterr().out
+
+    def test_keeps_dry_run(self, stubs):
+        expect_get(
+            stubs,
+            "gomi",
+            get_response("gomi", "cron(0 21 ? * MON *)", ["燃える"], dry_run=True),
+        )
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "update_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("gomi", "cron(0 21 ? * MON *)", ["変更"], dry_run=True),
+        )
+
+        assert main(["update", "gomi", "-m", "変更"], stubs.service) == 0
+
+    def test_same_dry_run_is_no_change(self, stubs, capsys):
+        self._expect_current(stubs)
+
+        assert main(["update", "gomi", "--no-dry-run"], stubs.service) == 1
+        assert "変更内容がありません" in capsys.readouterr().err
+
     def test_no_change(self, stubs, capsys):
         self._expect_current(stubs)
 
@@ -349,6 +435,21 @@ class TestEnableDisable:
         assert main([cmd, "a"], stubs.service) == 0
         assert label in capsys.readouterr().out
 
+    def test_keeps_dry_run(self, stubs):
+        expect_get(
+            stubs,
+            "a",
+            get_response("a", "cron(30 7 * * ? *)", ["朝"], state="ENABLED", dry_run=True),
+        )
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "update_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("a", "cron(30 7 * * ? *)", ["朝"], state="DISABLED", dry_run=True),
+        )
+
+        assert main(["disable", "a"], stubs.service) == 0
+
 
 class TestDelete:
     def test_delete(self, stubs, capsys):
@@ -371,7 +472,13 @@ class TestDelete:
 
 
 class TestSend:
-    def _expect_invoke(self, stubs, body: bytes, function_error: str | None = None):
+    def _expect_invoke(
+        self,
+        stubs,
+        body: bytes,
+        function_error: str | None = None,
+        payload: Any = ANY,
+    ):
         response: dict[str, Any] = {
             "StatusCode": 200,
             "Payload": StreamingBody(io.BytesIO(body), len(body)),
@@ -384,7 +491,7 @@ class TestSend:
             {
                 "FunctionName": "prod-nandemo-oshirase-function",
                 "InvocationType": "RequestResponse",
-                "Payload": ANY,
+                "Payload": payload,
             },
         )
 
@@ -394,6 +501,22 @@ class TestSend:
 
         assert main(["send", "a"], stubs.service) == 0
         assert "送信しました" in capsys.readouterr().out
+
+    def test_send_dry_run(self, stubs):
+        expect_get(stubs, "a", get_response("a", "cron(30 7 * * ? *)", ["朝"], dry_run=True))
+        payload = {
+            "source": SCHEDULER_EVENT_SOURCE,
+            "messages": ["朝"],
+            "schedule_arn": "manual:a",
+            "dry_run": True,
+        }
+        self._expect_invoke(
+            stubs,
+            b'{"statusCode": 200}',
+            payload=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        )
+
+        assert main(["send", "a"], stubs.service) == 0
 
     def test_send_failure(self, stubs, capsys):
         expect_get(stubs, "a", get_response("a", "cron(30 7 * * ? *)", ["朝"]))

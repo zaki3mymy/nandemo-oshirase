@@ -19,6 +19,12 @@ variable "log_retention_days" {
   default     = 14
 }
 
+variable "memory_size" {
+  description = "Memory size of the Lambda function in MB"
+  type        = number
+  default     = 256
+}
+
 variable "log_level" {
   description = "Log level for Lambda function (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
   type        = string
@@ -43,7 +49,7 @@ variable "grafana_otlp_auth_parameter" {
   type        = string
 }
 
-variable "otel_urllib_layer_zip_path" {
-  description = "Path to the zip of the Lambda layer with opentelemetry-instrumentation-urllib (built by scripts/build-otel-urllib-layer.py)"
-  type        = string
+variable "otel_layer_arns" {
+  description = "ARNs of the OTel Lambda layers, in order (the layer_arns output of tf/modules/otel_layers)"
+  type        = list(string)
 }

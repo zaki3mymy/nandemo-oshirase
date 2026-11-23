@@ -1,11 +1,7 @@
-"""Tests for split_into_batches function."""
-
 from nandemo_oshirase.lambda_function import LineMessage, split_into_batches
 
 
 class TestSplitIntoBatches:
-    """Test splitting messages into batches."""
-
     def test_split_into_batches_under_limit(self):
         messages: list[LineMessage] = [{"type": "text", "text": f"msg{i}"} for i in range(3)]
         result = split_into_batches(messages)

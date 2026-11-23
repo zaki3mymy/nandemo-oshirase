@@ -15,7 +15,6 @@ on:
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
-# 同じブランチの CD は同時に動かさず、1本ずつ順番に動かす
 concurrency:
   group: cd-${{ github.ref_name }}
   cancel-in-progress: false
@@ -56,6 +55,12 @@ jobs:
     runs-on: ubuntu-latest
     name: Deploy to AWS
     environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
+    # smoke-test ジョブで同じ環境・同じバージョンを使うため
+    outputs:
+      env: ${{ steps.config.outputs.env }}
+      tf_dir: ${{ steps.config.outputs.tf_dir }}
+      state_key: ${{ steps.config.outputs.state_key }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,15 +75,10 @@ jobs:
             echo "env=prod" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
-            # 本番は dry run で呼び出し、LINE には送信しない（LINE の validate API でトークンを確認する）
-            echo 'notify_payload={"message": "GitHub Actions deployment completed!", "dry_run": true}' >> $GITHUB_OUTPUT
-            echo "notify_expected=Dry run: would send 1 message(s)" >> $GITHUB_OUTPUT
           else
             echo "env=dev" >> $GITHUB_OUTPUT
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
-            echo 'notify_payload={"message": "GitHub Actions deployment completed!"}' >> $GITHUB_OUTPUT
-            echo "notify_expected=Successfully sent 1 message(s)" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure AWS credentials
@@ -91,7 +91,7 @@ jobs:
           mask-aws-account-id: true
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
 
@@ -122,9 +122,9 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh "${{ steps.version.outputs.version }}"
 
-      - name: Build the urllib instrumentation layer
-        # tf/modules/main.tf の aws_lambda_layer_version.otel_urllib が使う zip（dist/otel-urllib-layer.zip）を作る
-        run: python3 scripts/build-otel-urllib-layer.py
+      - name: Build the OTel instrumentations layer
+        # tf/modules/otel_layers/main.tf の aws_lambda_layer_version.otel_instrumentations が使う zip（dist/otel-instrumentations-layer.zip）を作る
+        run: python3 scripts/build-otel-instrumentations-layer.py
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -158,12 +158,78 @@ jobs:
           cd ${{ steps.config.outputs.tf_dir }}
           terraform apply -auto-approve
 
-      # dev は LINE への送信まで確認する。本番は dry run で、API キー・API Gateway・Lambda・
-      # LINE の認証情報の読み込みと、LINE の validate API によるトークンの確認までを行う
+  # デプロイした環境を確かめる。デプロイと分けて、失敗したときにスモークテストだけを再実行できるようにする。
+  # API キーはマスクされた値でジョブの出力では渡せないため、terraform output をこのジョブで読み直す
+  smoke-test:
+    needs: deploy
+    # deploy が依存する version は develop ではスキップされ、暗黙の success() だとこのジョブもスキップされるため、
+    # deploy の結果だけで判断する
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+    runs-on: ubuntu-latest
+    name: Smoke test
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set environment config
+        id: config
+        env:
+          ENV: ${{ needs.deploy.outputs.env }}
+          TF_DIR: ${{ needs.deploy.outputs.tf_dir }}
+          STATE_KEY: ${{ needs.deploy.outputs.state_key }}
+          VERSION: ${{ needs.deploy.outputs.version }}
+        run: |
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+          echo "tf_dir=$TF_DIR" >> "$GITHUB_OUTPUT"
+          echo "state_key=$STATE_KEY" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.17.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          cd ${{ steps.config.outputs.tf_dir }}
+          terraform init \
+            -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="key=${{ steps.config.outputs.state_key }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      # API Gateway の ID（エンドポイントのホスト名）を、このジョブのログでもマスクする
+      - name: Mask the API Gateway ID
+        run: |
+          cd ${{ steps.config.outputs.tf_dir }}
+          endpoint=$(terraform output -raw api_endpoint)
+          api_id=${endpoint#https://}
+          api_id=${api_id%%.*}
+          echo "::add-mask::$api_id"
+
+      # dev・本番とも dry run で呼び出し、LINE には送信しない。API キー・API Gateway・Lambda・
+      # LINE の認証情報の読み込みと、LINE の validate API によるトークンの確認までを行う。
+      # LINE の送信には月の上限（無料プランは 200 通）があり、デプロイのたびに送ると使い切ってしまうため
       - name: Test POST /notify
         env:
-          PAYLOAD: ${{ steps.config.outputs.notify_payload }}
-          EXPECTED: ${{ steps.config.outputs.notify_expected }}
+          PAYLOAD: '{"message": "GitHub Actions deployment completed!", "dry_run": true}'
+          EXPECTED: "Dry run: would send 1 message(s)"
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           API_KEY=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_key)
@@ -185,6 +251,28 @@ jobs:
             exit 1
           fi
 
+      # LINE の利用数を取得する Lambda を1回呼び、エラーにならないことを確かめる（dev・本番とも）。
+      # LINE の quota・quota/consumption API は読み取りだけなので、月の送信数は使わない。
+      # dev には定時実行がないので、dev で実際の LINE API で動くことを確かめられるのはここだけ
+      - name: Test the LINE quota Lambda
+        run: |
+          FUNCTION_NAME=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw quota_lambda_function_name)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --payload '{}' \
+            --cli-binary-format raw-in-base64-out quota-response.json > quota-invoke.json
+          cat quota-invoke.json
+          cat quota-response.json
+          echo
+
+          if jq -e 'has("FunctionError")' quota-invoke.json > /dev/null; then
+            echo "The LINE quota Lambda failed"
+            exit 1
+          fi
+          if ! jq -e '.totalUsage | type == "number"' quota-response.json > /dev/null; then
+            echo "The LINE quota Lambda did not return totalUsage"
+            exit 1
+          fi
+          echo "LINE quota Lambda test passed!"
+
       - name: Smoke test oshirase CLI
         env:
           ENV: ${{ steps.config.outputs.env }}
@@ -197,6 +285,7 @@ jobs:
           uv run oshirase --env $ENV disable "$NAME"
           uv run oshirase --env $ENV delete "$NAME"
 
+      # スケジュールから Lambda が呼ばれ、メッセージを確認できるところまでを確かめる。
       - name: Smoke test scheduler fires Lambda
         if: steps.config.outputs.env == 'dev'
         run: |
@@ -205,7 +294,8 @@ jobs:
           read MIN HOUR DAY MONTH YEAR <<< "$(TZ=Asia/Tokyo date -d '+2 min' '+%M %H %d %m %Y')"
           uv run oshirase --env dev add "$NAME" \
             --cron "$((10#$MIN)) $((10#$HOUR)) $((10#$DAY)) $((10#$MONTH)) ? $YEAR" \
-            -m "CI smoke test: scheduler fired (${{ github.sha }})"
+            -m "CI smoke test: scheduler fired (${{ github.sha }})" \
+            --dry-run
 
           LOG_GROUP="/aws/lambda/dev-nandemo-oshirase-function"
           REQUEST_ID=""
@@ -225,7 +315,7 @@ jobs:
               COUNT=$(aws logs filter-log-events \
                 --log-group-name "$LOG_GROUP" \
                 --start-time "$START_MS" \
-                --filter-pattern '"'"$REQUEST_ID"'" "All messages sent successfully"' \
+                --filter-pattern '"'"$REQUEST_ID"'" "Dry run: would send"' \
                 --query 'length(events)' --output text)
               if [ "$COUNT" != "0" ]; then
                 echo "Scheduler fire test passed!"
@@ -261,7 +351,7 @@ jobs:
 
       - name: Test GET /docs
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.config.outputs.version }}
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           DOCS_URL="${API_ENDPOINT%/notify}/docs"
@@ -273,7 +363,6 @@ jobs:
             echo "GET /docs test failed! Expected 200, got $HTTP_STATUS"
             exit 1
           fi
-          # デプロイしたバージョンが表示されていること
           if ! grep -qF "\"version\":\"$VERSION\"" docs.html; then
             echo "GET /docs test failed! Version $VERSION not found"
             exit 1
@@ -284,7 +373,7 @@ jobs:
   # バージョンは前のタグからの PR のラベルで決める（breaking: メジャー、feat: マイナー、それ以外: パッチ）
   # 数える PR がないとき（version の出力が空のとき）は、タグもリリースも作らない
   tag:
-    needs: [version, deploy]
+    needs: [version, smoke-test]
     if: github.ref_name == 'main' && needs.version.outputs.tag != ''
     permissions:
       contents: write
@@ -305,7 +394,7 @@ jobs:
   # 本番のリリース後に、main を develop に取り込む（main → develop の PR を作り、マージコミットでマージする）。
   # マージするコミットはタグの有無に関係ないので、タグを打たなかったとき（数える PR がないとき）も取り込む
   back-merge:
-    needs: deploy
+    needs: smoke-test
     if: github.ref_name == 'main'
     permissions:
       contents: read

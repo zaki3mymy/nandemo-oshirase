@@ -171,6 +171,74 @@
         }
       ],
       "responseMode": null
+    },
+    {
+      "uuid": "8b28ba99-0b70-498a-ae80-1bf8a73f6e69",
+      "type": "http",
+      "documentation": "Stub for LINE Messaging API get quota endpoint (target limit for the current month)",
+      "method": "get",
+      "endpoint": "v2/bot/message/quota",
+      "responses": [
+        {
+          "uuid": "526027bb-fef5-456f-9d11-6e7d6c642214",
+          "body": "{\"type\": \"limited\", \"value\": 200}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "814c493b-a424-4e69-8395-c25a4c5e9df1",
+      "type": "http",
+      "documentation": "Stub for LINE Messaging API get consumption endpoint (messages sent in the current month)",
+      "method": "get",
+      "endpoint": "v2/bot/message/quota/consumption",
+      "responses": [
+        {
+          "uuid": "ad0a7e69-5e51-4f8e-93e7-8c61853ff775",
+          "body": "{\"totalUsage\": 42}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
     }
   ],
   "rootChildren": [
@@ -181,6 +249,14 @@
     {
       "type": "route",
       "uuid": "91b7db67-aab1-45fe-b278-af92c97c509d"
+    },
+    {
+      "type": "route",
+      "uuid": "8b28ba99-0b70-498a-ae80-1bf8a73f6e69"
+    },
+    {
+      "type": "route",
+      "uuid": "814c493b-a424-4e69-8395-c25a4c5e9df1"
     }
   ],
   "proxyMode": false,

@@ -19,11 +19,10 @@ data "aws_region" "current" {}
 
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../../src/nandemo_oshirase"
+  source_dir  = "${path.module}/../../../src/nandemo_oshirase"
   output_path = "${path.module}/lambda.zip"
 }
 
-# IAM Role for Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "${local.name_prefix}-lambda-role"
 
@@ -46,7 +45,6 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# LINE の認証情報（SSM Parameter Store）の読み取り
 # AWS管理キー（aws/ssm）で暗号化された SecureString なので kms:Decrypt は不要
 resource "aws_iam_role_policy" "lambda_read_line_credentials" {
   name = "${local.name_prefix}-read-line-credentials"
@@ -102,19 +100,6 @@ resource "aws_iam_role_policy" "lambda_retry_keys" {
   })
 }
 
-# urllib の計装（opentelemetry-instrumentation-urllib）だけを入れたレイヤー。
-# コミュニティの Python 計装レイヤーには urllib の計装が無いため、自前で足す（LINE API の呼び出しの span を出す）。
-# zip は scripts/build-otel-urllib-layer.py で作る（CI の terraform-plan と CD で、terraform の前に実行する）。
-# 同じバージョンなら zip のハッシュは変わらないので、レイヤーは作り直されない
-resource "aws_lambda_layer_version" "otel_urllib" {
-  layer_name          = "${local.name_prefix}-otel-urllib"
-  description         = "opentelemetry-instrumentation-urllib for ${local.name_prefix}"
-  filename            = var.otel_urllib_layer_zip_path
-  source_code_hash    = filebase64sha256(var.otel_urllib_layer_zip_path)
-  compatible_runtimes = ["python3.13"]
-}
-
-# Lambda Function
 resource "aws_lambda_function" "notify" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${local.name_prefix}-function"
@@ -123,21 +108,12 @@ resource "aws_lambda_function" "notify" {
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   runtime          = "python3.13"
   timeout          = 30
+  memory_size      = var.memory_size
 
-  # OTel Lambdaレイヤー: Python計装レイヤー + コレクターレイヤー（どちらもコミュニティ製）
-  # バージョンは https://github.com/open-telemetry/opentelemetry-lambda/releases で確認
-  # （layer-python/<version>・layer-collector/<version> のタグ）
+  # OTel の Lambda レイヤー（Python 計装・Collector・自前の計装）。tf/modules/otel_layers で作り、順番もそこで決める。
   # コレクターは OTLP を受けて、Grafana Cloud に otlphttp で送る（collector.yaml）
   # AWS_LAMBDA_EXEC_WRAPPER（下記environment）でPython計装レイヤーがlambda_handlerをラップする
-  # 新しいバージョンが出たら、.github/workflows/update-otel-lambda-layers.yml がこの ARN と
-  # pyproject.toml・uv.lock の OTel の依存を一緒に上げる PR を作る（ローカルと本番をそろえる。
-  # 自前の urllib のレイヤーも uv.lock のバージョンで作る）。手で上げるときも、両方を同じバージョンにする
-  # 自前の urllib のレイヤーは、コミュニティのレイヤーのあとに重ねる（どれも /opt/python に展開される）
-  layers = [
-    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-python-0_22_0:1",
-    "arn:aws:lambda:ap-northeast-1:184161586896:layer:opentelemetry-collector-amd64-0_24_0:1",
-    aws_lambda_layer_version.otel_urllib.arn,
-  ]
+  layers = var.otel_layer_arns
 
   # X-Ray にはトレースを送らない（Grafana Cloud に送る）。
   # ブロックを消すだけでは今の設定（Active）が残るため、PassThrough を明示する
@@ -159,6 +135,9 @@ resource "aws_lambda_function" "notify" {
       OTEL_RESOURCE_ATTRIBUTES = "deployment.environment.name=${var.stage_name},deployment.environment=${var.stage_name}"
       OTEL_TRACES_EXPORTER     = "otlp"
       OTEL_METRICS_EXPORTER    = "otlp"
+      # logging のログを OTel のログとして送る（自前のレイヤーの opentelemetry-instrumentation-logging が
+      # ルートロガーにハンドラーを付ける）。ログは実行の終わりに lambda_function.py で flush する
+      OTEL_LOGS_EXPORTER = "otlp"
       # メトリクスは SDK の既定の cumulative（累積値）で送る（Grafana Cloud は Prometheus 互換で累積値を前提にする）
       # collector.yaml が読む、Grafana Cloud の OTLP の送信先と Authorization ヘッダーの値
       GRAFANA_CLOUD_OTLP_ENDPOINT = var.grafana_otlp_endpoint
@@ -167,19 +146,16 @@ resource "aws_lambda_function" "notify" {
   }
 }
 
-# CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${aws_lambda_function.notify.function_name}"
   retention_in_days = var.log_retention_days
 }
 
-# CloudWatch Log Group for API Gateway access logs
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/${var.stage_name}"
   retention_in_days = var.log_retention_days
 }
 
-# API Gateway REST API
 resource "aws_api_gateway_rest_api" "api" {
   name        = "${local.name_prefix}-api"
   description = "API for LINE notification service"
@@ -189,14 +165,12 @@ resource "aws_api_gateway_rest_api" "api" {
   }
 }
 
-# API Gateway Resource: /notify
 resource "aws_api_gateway_resource" "notify" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
   path_part   = "notify"
 }
 
-# API Gateway Method: POST /notify
 resource "aws_api_gateway_method" "notify_post" {
   rest_api_id      = aws_api_gateway_rest_api.api.id
   resource_id      = aws_api_gateway_resource.notify.id
@@ -205,7 +179,6 @@ resource "aws_api_gateway_method" "notify_post" {
   api_key_required = true
 }
 
-# API Gateway Integration with Lambda
 resource "aws_api_gateway_integration" "lambda_integration" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.notify.id
@@ -215,7 +188,6 @@ resource "aws_api_gateway_integration" "lambda_integration" {
   uri                     = aws_lambda_function.notify.invoke_arn
 }
 
-# Lambda Permission for API Gateway
 resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
@@ -224,7 +196,6 @@ resource "aws_lambda_permission" "api_gateway" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }
 
-# API Gateway Resource: /webhook
 resource "aws_api_gateway_resource" "webhook" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
@@ -240,7 +211,6 @@ resource "aws_api_gateway_method" "webhook_post" {
   api_key_required = false
 }
 
-# API Gateway Integration: POST /webhook → Lambda
 resource "aws_api_gateway_integration" "webhook_integration" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.webhook.id
@@ -250,14 +220,12 @@ resource "aws_api_gateway_integration" "webhook_integration" {
   uri                     = aws_lambda_function.notify.invoke_arn
 }
 
-# API Gateway Resource: /docs
 resource "aws_api_gateway_resource" "docs" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
   path_part   = "docs"
 }
 
-# API Gateway Method: GET /docs (APIキー不要)
 resource "aws_api_gateway_method" "docs_get" {
   rest_api_id      = aws_api_gateway_rest_api.api.id
   resource_id      = aws_api_gateway_resource.docs.id
@@ -266,7 +234,6 @@ resource "aws_api_gateway_method" "docs_get" {
   api_key_required = false
 }
 
-# API Gateway Integration: GET /docs → Lambda
 resource "aws_api_gateway_integration" "docs_integration" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.docs.id
@@ -276,7 +243,6 @@ resource "aws_api_gateway_integration" "docs_integration" {
   uri                     = aws_lambda_function.notify.invoke_arn
 }
 
-# API Gateway Deployment
 resource "aws_api_gateway_deployment" "deployment" {
   depends_on = [
     aws_api_gateway_integration.lambda_integration,
@@ -307,7 +273,6 @@ resource "aws_api_gateway_deployment" "deployment" {
   }
 }
 
-# API Gateway Stage
 resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.api.id
@@ -339,13 +304,11 @@ resource "aws_api_gateway_method_settings" "all" {
   }
 }
 
-# API Key
 resource "aws_api_gateway_api_key" "api_key" {
   name    = "${local.name_prefix}-api-key"
   enabled = true
 }
 
-# Usage Plan
 resource "aws_api_gateway_usage_plan" "usage_plan" {
   name = "${local.name_prefix}-usage-plan"
 
@@ -355,7 +318,6 @@ resource "aws_api_gateway_usage_plan" "usage_plan" {
   }
 }
 
-# Usage Plan Key
 resource "aws_api_gateway_usage_plan_key" "usage_plan_key" {
   key_id        = aws_api_gateway_api_key.api_key.id
   key_type      = "API_KEY"
