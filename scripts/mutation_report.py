@@ -71,8 +71,9 @@ def tokens(source: str) -> list[Token] | None:
 
 
 def is_noise_change(before: list[Token], i1: int, i2: int) -> bool:
-    """before[i1:i2] の変更が、help= などの値か、span 名などの引数か、help= などの引数そのものに収まるかを返す。
+    """before[i1:i2] の変更が、振る舞いに関わらない箇所に収まるかを返す。
 
+    help= などの値、span 名などの引数、help= などの引数そのもののいずれか。
     help=argparse.SUPPRESS や help=help_ のように、値が文字列でない場合も含める。
     """
     if i1 == i2:
