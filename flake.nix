@@ -18,7 +18,8 @@
         pkgs = import nixpkgs { inherit system; };
       in
       {
-        devShells.default = pkgs.mkShell {
+        # C コンパイラ（gcc など）は使わないので、mkShellNoCC にする（CI でキャッシュする Nix ストアが小さくなる）
+        devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
             # Python 本体は入れない。uv が .python-version を見て入れる（CI の setup-uv と同じ）
             # ruff などの Python のツールは、uv.lock で管理する（uv run で使う）
