@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -7,7 +8,12 @@ import pytest
 from opentelemetry._logs._internal import ProxyLoggerProvider
 from opentelemetry.sdk._logs import LoggerProvider
 
-from nandemo_oshirase.lambda_function import LOG_FLUSH_TIMEOUT_MILLIS, LambdaEvent, lambda_handler
+from nandemo_oshirase.lambda_function import (
+    LOG_FLUSH_TIMEOUT_MILLIS,
+    LambdaEvent,
+    deliver_messages,
+    lambda_handler,
+)
 
 
 class TestLambdaHandlerSuccess:
@@ -188,6 +194,81 @@ class TestLambdaHandlerWebhook:
         }
         result = lambda_handler(event, None)
         assert result["statusCode"] == 200
+
+
+class TestRouteMethodAndPath:
+    """/docs と /webhook は、HTTP メソッドとパスの両方が一致するときだけ振り分ける"""
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("POST", "/docs"),
+            ("GET", "/webhook"),
+            ("GET", "/notify"),
+            ("POST", "/notify"),
+        ],
+    )
+    def test_other_requests_go_to_notify(self, method, path):
+        event: LambdaEvent = {"httpMethod": method, "path": path, "body": "{}"}
+
+        with (
+            patch("nandemo_oshirase.lambda_function.serve_docs") as mock_docs,
+            patch("nandemo_oshirase.lambda_function.handle_webhook") as mock_webhook,
+            patch("nandemo_oshirase.lambda_function.handle_notify") as mock_notify,
+        ):
+            lambda_handler(event, None)
+
+        mock_docs.assert_not_called()
+        mock_webhook.assert_not_called()
+        mock_notify.assert_called_once_with(event)
+
+
+class TestDeliverMessagesBatches:
+    """失敗したバッチの番号（1 始まり）をログに出し、バッチ数を span の属性に記録する"""
+
+    @staticmethod
+    def _error_batch_numbers(caplog: pytest.LogCaptureFixture) -> list[object]:
+        return [
+            r.args[0]
+            for r in caplog.records
+            if r.levelno == logging.ERROR and isinstance(r.args, tuple)
+        ]
+
+    def test_failed_batch_number_is_logged(self, caplog, monkeypatch):
+        monkeypatch.delenv("RETRY_KEY_TABLE_NAME", raising=False)
+        ok = {"statusCode": 200, "body": "{}"}
+        ng = {"statusCode": 500, "body": "{}"}
+
+        with patch("nandemo_oshirase.lambda_function.push_messages", side_effect=[ok, ng]):
+            result = deliver_messages([f"msg{i}" for i in range(7)], "token", "user")
+
+        assert result == ng
+        assert self._error_batch_numbers(caplog) == [2]
+
+    def test_failed_batch_number_is_logged_in_dry_run(self, caplog):
+        ok = {"statusCode": 200, "body": "{}"}
+        ng = {"statusCode": 400, "body": "{}"}
+
+        with patch("nandemo_oshirase.lambda_function.validate_push_messages", side_effect=[ok, ng]):
+            result = deliver_messages([f"msg{i}" for i in range(7)], "token", "user", dry_run=True)
+
+        assert result == ng
+        assert self._error_batch_numbers(caplog) == [2]
+
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_batch_count_is_set_on_span(self, monkeypatch, dry_run):
+        monkeypatch.delenv("RETRY_KEY_TABLE_NAME", raising=False)
+        ok = {"statusCode": 200, "body": "{}"}
+
+        with (
+            patch("nandemo_oshirase.lambda_function.trace") as mock_trace,
+            patch("nandemo_oshirase.lambda_function.push_messages", return_value=ok),
+            patch("nandemo_oshirase.lambda_function.validate_push_messages", return_value=ok),
+        ):
+            deliver_messages([f"msg{i}" for i in range(7)], "token", "user", dry_run=dry_run)
+
+        set_attribute = mock_trace.get_current_span.return_value.set_attribute
+        assert call("line.batch_count", 2) in set_attribute.mock_calls
 
 
 class TestLambdaHandlerPushError:

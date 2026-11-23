@@ -1,4 +1,21 @@
+import logging
+
 from nandemo_oshirase.lambda_function import validate_messages
+
+
+class TestValidateMessagesWarning:
+    """空のメッセージを除いたときだけ、除いた件数を警告に出す"""
+
+    def test_warns_skipped_count(self, caplog):
+        validate_messages(["Hello", "", " ", "World"])
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert [r.args for r in warnings] == [(2,)]
+
+    def test_no_warning_without_empty_messages(self, caplog):
+        validate_messages(["Hello", "World"])
+
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
 
 
 class TestValidateMessagesValid:
