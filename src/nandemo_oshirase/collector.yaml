@@ -1,6 +1,6 @@
 # Lambda の Collector レイヤー（opentelemetry-lambda のコミュニティ製）の設定。
 # アプリ（Python 計装レイヤー）からトレース・メトリクス・ログを OTLP で受けて、Grafana Cloud に otlphttp で送る。
-# 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/main.tf）。
+# 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/notify/main.tf）。
 receivers:
   otlp:
     protocols:

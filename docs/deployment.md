@@ -58,7 +58,7 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 
 ### 自前の計装のレイヤー
 
-コミュニティの Python計装レイヤーには、次の計装が入っていません。そのため、これらを入れたレイヤーを自前で作り、コミュニティのレイヤーに重ねています（`tf/modules/main.tf` の `aws_lambda_layer_version.otel_instrumentations`）。
+コミュニティの Python計装レイヤーには、次の計装が入っていません。そのため、これらを入れたレイヤーを自前で作り、コミュニティのレイヤーに重ねています（`tf/modules/otel_layers/main.tf` の `aws_lambda_layer_version.otel_instrumentations`）。
 
 | 計装 | 無いと |
 |---|---|
@@ -67,7 +67,8 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 
 - zip は `scripts/build-otel-instrumentations-layer.py` で作ります（CI の terraform-plan と CD で、Terraform の前に実行します）。依存するパッケージはコミュニティのレイヤーにあるので、これらの計装だけを `--no-deps` で入れます。計装を足すときは、スクリプトの `PACKAGES` と `pyproject.toml` の両方に足します。同じバージョンなら zip のハッシュは変わらないので、レイヤーは作り直されません。
 - バージョンは `uv.lock` のものを使います。`pyproject.toml` の OTel の依存は、コミュニティの Python計装レイヤー（タグの `requirements.txt`）と同じバージョンに `==` で固定しています（ローカルと本番のバージョンをそろえるため）。Dependabot では OTel のパッケージを上げません（`.github/dependabot.yml` の `ignore`）。
-- コミュニティのレイヤーの新しいバージョンは、`.github/workflows/update-otel-lambda-layers.yml` が見つけて、`tf/modules/main.tf` の ARN と `pyproject.toml`・`uv.lock` の OTel の依存を一緒に上げる PR を develop に作ります。opentelemetry-lambda のリリースは feed-release-invoke-workflow の `repository_dispatch`（`otel-lambda-release`）で知り、取りこぼしに備えて週1回の `schedule` でも確認します。
+- レイヤーの ARN（コミュニティの2つと自前の1つ）は `tf/modules/otel_layers` にまとめ、重ねる順番もそこで決めています。Lambda のモジュールは、その output の `layer_arns` をそのまま `layers` に渡します。
+- コミュニティのレイヤーの新しいバージョンは、`.github/workflows/update-otel-lambda-layers.yml` が見つけて、`tf/modules/otel_layers/main.tf` の ARN と `pyproject.toml`・`uv.lock` の OTel の依存を一緒に上げる PR を develop に作ります。opentelemetry-lambda のリリースは feed-release-invoke-workflow の `repository_dispatch`（`otel-lambda-release`）で知り、取りこぼしに備えて週1回の `schedule` でも確認します。
 
 ### Grafana Cloud の認証情報
 
