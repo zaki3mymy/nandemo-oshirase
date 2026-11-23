@@ -196,7 +196,15 @@ jobs:
           # どちらかが失敗したら、wait が失敗の終了コードを返し、ステップが失敗する
           wait "$services"
           wait "$build"
-          docker compose -f podman-compose.yml up -d --no-build lambda lambda-quota
+          # Lambda は dynamodb-init（テーブルを作って終わる）の完了を待つ設定なので、ここで完了を確かめる。
+          # そのうえで --no-deps で起動する（依存先も指定すると、終わった dynamodb-init がもう一度動き、
+          # テーブルがすでにあるので失敗する）
+          init_exit=$(docker wait "$(docker compose -f podman-compose.yml ps -aq dynamodb-init)")
+          if [ "$init_exit" != "0" ]; then
+            echo "dynamodb-init failed with exit code $init_exit" >&2
+            exit 1
+          fi
+          docker compose -f podman-compose.yml up -d --no-build --no-deps lambda lambda-quota
 
       - name: Wait for services to be healthy
         run: |
