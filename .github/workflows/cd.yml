@@ -162,6 +162,9 @@ jobs:
   # API キーはマスクされた値でジョブの出力では渡せないため、terraform output をこのジョブで読み直す
   smoke-test:
     needs: deploy
+    # deploy が依存する version は develop ではスキップされ、暗黙の success() だとこのジョブもスキップされるため、
+    # deploy の結果だけで判断する
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
     runs-on: ubuntu-latest
     name: Smoke test
     environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
