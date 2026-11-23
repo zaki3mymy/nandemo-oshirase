@@ -135,7 +135,33 @@ mutmut は同じプロセスで pytest を何度も実行するため、hypothes
 
 - 高・中が 1 件以上あれば、開いている issue の本文を最新の結果で上書きします（無ければ作ります）。
 - 高・中が 0 件になったら、その issue にコメントしてクローズします。その後また見つかったら、新しい issue を作ります。
-- issue の候補は、テストを足すか、振る舞いが変わらない（等価な）ミュータントなら該当行に `# pragma: no mutate` を付けて解消します。いずれも次の実行で issue から消えます。
 - PR をマージした直後に確認したいときは、Actions の画面から手動で実行できます（`workflow_dispatch`）。
 
 ローカルでレポートを作るには、`uv run mutmut run` のあとに `uv run python scripts/mutation_report.py --out report.md` を実行します。
+
+### issue の候補の直し方
+
+テストファイルの単位（例: Lambda のルーティングと送信、CLI の引数）でまとめて 1 つの PR にします。候補ごとに、次のどちらかで解消します。
+
+- **テストを足す**: ミュータントの差分を見て、その変更で結果が変わることを確かめるテストを書きます。ログの文言は固定せず、ログに出す値（`record.args`）を確かめるのは構いません。
+- **等価なミュータントとして除く**: 変更しても振る舞いが変わらない（例: `data` を渡した `urllib.request.Request` の `method="POST"`）なら、その引数の行に `# pragma: no mutate` を付けます。理由はすぐ上の行にコメントで書きます（pragma の後ろに続けると、`block` などの指定と紛らわしくなるため）。pragma は付けた行の変更だけを止めるので、ほかの引数の変更も止めないよう、引数を 1 行ずつに分けてから付けます。
+
+```python
+request = urllib.request.Request(
+    url,
+    data=body,
+    headers=headers,
+    # data を渡すと urllib は POST で送るので、method を変えても振る舞いは同じ（明示のため）
+    method="POST",  # pragma: no mutate
+)
+```
+
+直ったかどうかは、全件を流し直さず、名前（ワイルドカード可）で絞って確認できます。名前を指定すると、前回の結果があっても実行し直します。
+
+```bash
+uv run mutmut run "nandemo_oshirase.lambda_function.x_route__mutmut_*"   # 関数の単位
+uv run mutmut run "nandemo_oshirase.lambda_function.*"                    # モジュールの単位
+uv run mutmut results                                                     # survived が消えたか
+```
+
+マージ後の週次の実行（または手動実行）で issue から消え、高・中が 0 件になれば issue は自動でクローズされます。
