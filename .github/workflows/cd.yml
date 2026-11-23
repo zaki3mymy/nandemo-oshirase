@@ -180,6 +180,28 @@ jobs:
             exit 1
           fi
 
+      # LINE の利用数を取得する Lambda を1回呼び、エラーにならないことを確かめる（dev・本番とも）。
+      # LINE の quota・quota/consumption API は読み取りだけなので、月の送信数は使わない。
+      # dev には定時実行がないので、dev で実際の LINE API で動くことを確かめられるのはここだけ
+      - name: Test the LINE quota Lambda
+        run: |
+          FUNCTION_NAME=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw quota_lambda_function_name)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --payload '{}' \
+            --cli-binary-format raw-in-base64-out quota-response.json > quota-invoke.json
+          cat quota-invoke.json
+          cat quota-response.json
+          echo
+
+          if jq -e 'has("FunctionError")' quota-invoke.json > /dev/null; then
+            echo "The LINE quota Lambda failed"
+            exit 1
+          fi
+          if ! jq -e '.totalUsage | type == "number"' quota-response.json > /dev/null; then
+            echo "The LINE quota Lambda did not return totalUsage"
+            exit 1
+          fi
+          echo "LINE quota Lambda test passed!"
+
       - name: Smoke test oshirase CLI
         env:
           ENV: ${{ steps.config.outputs.env }}
