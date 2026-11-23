@@ -58,3 +58,6 @@ src/nandemo_oshirase/docs.html
 
 # direnv（nix develop のキャッシュ）
 .direnv/
+
+# mutmut（ミューテーションテストの作業ディレクトリ）
+mutants/

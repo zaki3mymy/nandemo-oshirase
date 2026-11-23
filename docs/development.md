@@ -108,3 +108,16 @@ lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrum
 podman-compose up -d
 uv run pytest tests/integration/
 ```
+
+## ミューテーションテスト
+
+[mutmut](https://github.com/boxed/mutmut) で単体テストの検証の強さを確認できます。ソースを少し書き換えたもの（ミュータント）ごとに `tests/unit/` を流し、テストが落ちなかったもの（survived）が「実行はしているが結果を検証できていない」箇所です。設定は `pyproject.toml` の `[tool.mutmut]` にあります。
+
+```bash
+uv run mutmut run              # 実行（作業用に mutants/ が作られる）
+uv run mutmut results          # survived の一覧
+uv run mutmut show <名前>       # ミュータントの差分を表示
+uv run mutmut browse           # TUI で確認
+```
+
+mutmut は同じプロセスで pytest を何度も実行するため、hypothesis のプロファイル `mutmut`（`tests/unit/conftest.py`）を使い、カバレッジ計測も切っています。
