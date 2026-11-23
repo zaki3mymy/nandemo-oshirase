@@ -132,8 +132,24 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      # scripts/build-docs.sh の npx が取る @redocly/cli を、npm のキャッシュから使う。
+      # バージョンは build-docs.sh で固定しているので、build-docs.sh をキーにする。保存はほかのキャッシュと同じく SAVE_CACHE のときだけ
+      - name: Restore npm cache
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('scripts/build-docs.sh') }}
+
       - name: Build docs
         run: scripts/build-docs.sh dev
+
+      - name: Save npm cache
+        if: env.SAVE_CACHE == 'true' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
 
       - name: Run tests
         run: uv run pytest --cov-report=html --cov-report=term
@@ -237,6 +253,13 @@ jobs:
             echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
             echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
           fi
+
+      # Test with coverage のジョブが保存した npm のキャッシュ（@redocly/cli）を使う（読むだけ）
+      - name: Restore npm cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('scripts/build-docs.sh') }}
 
       # Lambda の zip（src/nandemo_oshirase）には docs.html が含まれる。CD と同じく生成しないと
       # zip の内容が変わり、plan に Lambda の source_code_hash の差分が出てしまう。
