@@ -70,14 +70,25 @@ def tokens(source: str) -> list[Token] | None:
         return None
 
 
-def is_noise_string(before: list[Token], index: int) -> bool:
-    """before[index] の文字列が help= などの値か、span 名などの引数かを返す。"""
-    prev = [s for _, s in before[max(0, index - 2) : index]]
-    if len(prev) == 2 and prev[1] == "=" and prev[0] in NOISE_KWARGS:
-        return True
-    if len(prev) == 2 and prev[1] == "(" and prev[0] in NOISE_CALLS:
-        return True
-    return False
+def is_noise_change(before: list[Token], i1: int, i2: int) -> bool:
+    """before[i1:i2] の変更が、振る舞いに関わらない箇所に収まるかを返す。
+
+    help= などの値、span 名などの引数、help= などの引数そのもののいずれか。
+    help=argparse.SUPPRESS や help=help_ のように、値が文字列でない場合も含める。
+    """
+    if i1 == i2:
+        return False
+    prev = [s for _, s in before[max(0, i1 - 2) : i1]]
+    changed = [s for _, s in before[i1:i2]]
+    # 値の書き換え（None への置き換えを含む）。後ろの引数まで変わっていないこと
+    if len(prev) == 2 and (
+        (prev[1] == "=" and prev[0] in NOISE_KWARGS) or (prev[1] == "(" and prev[0] in NOISE_CALLS)
+    ):
+        return "," not in changed
+    # キーワード引数ごとの削除（前の , も一緒に消えることがある）
+    if changed[0] == ",":
+        changed = changed[1:]
+    return len(changed) >= 2 and changed[0] in NOISE_KWARGS and changed[1] == "="
 
 
 def classify(removed: str, added: str) -> tuple[str, str]:
@@ -93,12 +104,7 @@ def classify(removed: str, added: str) -> tuple[str, str]:
     if not changed:
         return "中", "分類できない変更"
 
-    # help="..." などの値が書き換わった（None への置き換えを含む）
-    if old and all(t == tokenize.STRING and is_noise_string(before, i) for i, (t, _) in old):
-        return "対象外", "help・metavar・span 名など"
-    # help="..." などのキーワード引数ごと消えた
-    removed_names = {s for _, (t, s) in old if t == tokenize.NAME}
-    if removed_names and removed_names <= NOISE_KWARGS and not new:
+    if all(is_noise_change(before, i1, i2) for _, i1, i2, _, _ in ops):
         return "対象外", "help・metavar・span 名など"
 
     if all(t == tokenize.STRING for t, _ in changed):
