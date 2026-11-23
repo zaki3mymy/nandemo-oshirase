@@ -40,6 +40,8 @@ source_paths = ["src/"]
 pytest_add_cli_args_test_selection = ["tests/unit/"]
 # addopts の --cov-fail-under=100 がミュータントごとの実行で効かないようにカバレッジを切る
 pytest_add_cli_args = ["--no-cov", "--hypothesis-profile=mutmut"]
+# ログの文言はテストで固定しないので、ミュータントを作らない
+do_not_mutate_patterns = ['logger\.']
 
 [tool.ruff]
 target-version = "py313"
