@@ -37,12 +37,13 @@ jobs:
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
 
-      # ツールが変わるのは flake.nix・flake.lock が変わったときだけなので、それをキーにする
+      # ツールが変わるのは flake.nix・flake.lock が変わったときだけなので、それをキーにする。
+      # キーが違う古いキャッシュは復元しない。復元すると、使わなくなったストアのパスまで新しいキャッシュに入り、
+      # キャッシュが大きくなり続ける（復元に時間がかかる）。キーが変わった直後の 1 回だけ、ツールをダウンロードし直す
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
           save: ${{ env.SAVE_CACHE }}
 
       # uv のパッケージのキャッシュと、pre-commit のフックの環境（pre-commit-hooks など）。
