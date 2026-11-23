@@ -75,6 +75,19 @@ class TestParseDays:
         with pytest.raises(ValueError, match="1つ以上"):
             cron.parse_days(" , ")
 
+    @pytest.mark.parametrize("days", [",mon,thu", "、月,木", "mon,thu,"])
+    def test_leading_or_trailing_separator(self, days):
+        """区切りが先頭・末尾にあっても、その後ろの曜日まで読む"""
+        assert cron.parse_days(days) == [2, 5]
+
+    def test_non_ascii_is_not_lowercased(self):
+        """ASCII 以外は小文字にせずに比べる
+
+        トルコ語の İ は小文字にすると i になるので、小文字にすると FRİ が fri と読めてしまう。
+        """
+        with pytest.raises(ValueError, match="曜日が不正"):
+            cron.parse_days("FRİ")
+
 
 class TestBuildExpression:
     @pytest.mark.parametrize(("short", "full", "ja", "num", "name"), WEEKDAYS, ids=WEEKDAY_IDS)
@@ -124,7 +137,16 @@ class TestReplaceTime:
     def test_replace(self):
         assert cron.replace_time("cron(0 21 ? * MON *)", "20:30") == "cron(30 20 ? * MON *)"
 
-    @pytest.mark.parametrize("expr", ["cron(0/5 * * * ? *)", "rate(1 hour)"])
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            "cron(0/5 * * * ? *)",
+            # 分か時のどちらか一方でも数字でなければ、--at だけでは変更できない
+            "cron(0/15 9 * * ? *)",
+            "cron(0 9-17 * * ? *)",
+            "rate(1 hour)",
+        ],
+    )
     def test_unsupported(self, expr):
         with pytest.raises(ValueError, match="--at だけでは変更できません"):
             cron.replace_time(expr, "20:30")
@@ -150,10 +172,14 @@ class TestDescribe:
         [
             "rate(1 hour)",
             "cron(0/5 * * * ? *)",
+            "cron(0/15 9 * * ? *)",
+            "cron(0 9-17 * * ? *)",
             "cron(0 8 1 * ? *)",
             "cron(0 8 ? 1 MON *)",
             "cron(0 8 ? * MON-FRI *)",
             "cron(0 8 ? * XYZ#2 *)",
+            # 曜日の番号は 1〜7。範囲外は 8 から
+            "cron(0 8 ? * 8 *)",
             "cron(0 8 ? * 9 *)",
         ],
     )
