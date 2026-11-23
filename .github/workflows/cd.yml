@@ -55,6 +55,12 @@ jobs:
     runs-on: ubuntu-latest
     name: Deploy to AWS
     environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
+    # smoke-test ジョブで同じ環境・同じバージョンを使うため
+    outputs:
+      env: ${{ steps.config.outputs.env }}
+      tf_dir: ${{ steps.config.outputs.tf_dir }}
+      state_key: ${{ steps.config.outputs.state_key }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,6 +157,68 @@ jobs:
         run: |
           cd ${{ steps.config.outputs.tf_dir }}
           terraform apply -auto-approve
+
+  # デプロイした環境を確かめる。デプロイと分けて、失敗したときにスモークテストだけを再実行できるようにする。
+  # API キーはマスクされた値でジョブの出力では渡せないため、terraform output をこのジョブで読み直す
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    name: Smoke test
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'develop' }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set environment config
+        id: config
+        env:
+          ENV: ${{ needs.deploy.outputs.env }}
+          TF_DIR: ${{ needs.deploy.outputs.tf_dir }}
+          STATE_KEY: ${{ needs.deploy.outputs.state_key }}
+          VERSION: ${{ needs.deploy.outputs.version }}
+        run: |
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+          echo "tf_dir=$TF_DIR" >> "$GITHUB_OUTPUT"
+          echo "state_key=$STATE_KEY" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "~1.17.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          cd ${{ steps.config.outputs.tf_dir }}
+          terraform init \
+            -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="key=${{ steps.config.outputs.state_key }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      # API Gateway の ID（エンドポイントのホスト名）を、このジョブのログでもマスクする
+      - name: Mask the API Gateway ID
+        run: |
+          cd ${{ steps.config.outputs.tf_dir }}
+          endpoint=$(terraform output -raw api_endpoint)
+          api_id=${endpoint#https://}
+          api_id=${api_id%%.*}
+          echo "::add-mask::$api_id"
 
       # dev・本番とも dry run で呼び出し、LINE には送信しない。API キー・API Gateway・Lambda・
       # LINE の認証情報の読み込みと、LINE の validate API によるトークンの確認までを行う。
@@ -280,7 +348,7 @@ jobs:
 
       - name: Test GET /docs
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.config.outputs.version }}
         run: |
           API_ENDPOINT=$(cd ${{ steps.config.outputs.tf_dir }} && terraform output -raw api_endpoint)
           DOCS_URL="${API_ENDPOINT%/notify}/docs"
@@ -302,7 +370,7 @@ jobs:
   # バージョンは前のタグからの PR のラベルで決める（breaking: メジャー、feat: マイナー、それ以外: パッチ）
   # 数える PR がないとき（version の出力が空のとき）は、タグもリリースも作らない
   tag:
-    needs: [version, deploy]
+    needs: [version, smoke-test]
     if: github.ref_name == 'main' && needs.version.outputs.tag != ''
     permissions:
       contents: write
@@ -323,7 +391,7 @@ jobs:
   # 本番のリリース後に、main を develop に取り込む（main → develop の PR を作り、マージコミットでマージする）。
   # マージするコミットはタグの有無に関係ないので、タグを打たなかったとき（数える PR がないとき）も取り込む
   back-merge:
-    needs: deploy
+    needs: smoke-test
     if: github.ref_name == 'main'
     permissions:
       contents: read
