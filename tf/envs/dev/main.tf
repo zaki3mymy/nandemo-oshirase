@@ -54,3 +54,20 @@ module "notify" {
   # Grafana Cloud に送るための Authorization ヘッダーの値を置いた SSM パラメータ（このリポジトリの外で作る）
   grafana_otlp_auth_parameter = "/app/grafana/dev/otlp_auth"
 }
+
+# LINE の当月の利用数と上限を取得して、Grafana Cloud にメトリクスを送る Lambda。
+# dev は定時実行しない（CD のデプロイのあとに invoke して確かめるだけ。上限は prod と共有しているため）
+module "nandemo_oshirase_quota" {
+  source = "../../modules/nandemo_oshirase_quota"
+
+  project_name          = var.project_name
+  line_parameter_prefix = var.line_parameter_prefix
+  log_level             = var.log_level
+  stage_name            = "dev"
+
+  otel_layer_arns = module.otel_layers.layer_arns
+
+  grafana_otlp_auth_parameter = "/app/grafana/dev/otlp_auth"
+
+  schedule_enabled = false
+}
