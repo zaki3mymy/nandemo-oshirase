@@ -20,7 +20,7 @@ on:
   workflow_call:
 
 env:
-  # キャッシュ（nix のストア・uv・pre-commit）は develop・main への push で CD から呼ばれたときだけ保存する。
+  # キャッシュ（nix のストア・uv・pre-commit・Terraform のプロバイダー）は develop・main への push で CD から呼ばれたときだけ保存する。
   # PR で作ったキャッシュはその PR でしか使えないので、PR では読むだけにする
   SAVE_CACHE: ${{ github.event_name != 'pull_request' }}
 
@@ -72,6 +72,20 @@ jobs:
         with:
           terraform_version: "~1.17.0"
 
+      # Terraform のプロバイダー（aws は大きく、1回 7 秒ほどかかる）を毎回ダウンロードしないよう、プラグインのキャッシュを使う。
+      # プロバイダーが変わるのは .terraform.lock.hcl が変わったときだけなので、それをキーにする
+      - name: Prepare Terraform provider cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Terraform provider cache
+        id: tf-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('tf/envs/*/.terraform.lock.hcl') }}
+
       - name: Terraform init (for validate)
         run: |
           terraform -chdir=tf/envs/prod init -backend=false
@@ -95,6 +109,13 @@ jobs:
             ~/.cache/uv
             ~/.cache/pre-commit
           key: ${{ steps.tool-cache.outputs.cache-primary-key }}
+
+      - name: Save Terraform provider cache
+        if: env.SAVE_CACHE == 'true' && steps.tf-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ steps.tf-cache.outputs.cache-primary-key }}
 
   test-unit:
     runs-on: ubuntu-latest
@@ -227,6 +248,18 @@ jobs:
           terraform_version: "~1.17.0"
           # terraform output -raw の値をそのまま使うため、ラッパーを無効にする
           terraform_wrapper: false
+
+      # Pre-commit checks のジョブが保存したプロバイダーのキャッシュを使う（読むだけ）
+      - name: Prepare Terraform provider cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Terraform provider cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('tf/envs/*/.terraform.lock.hcl') }}
 
       - name: Terraform Init
         run: |
