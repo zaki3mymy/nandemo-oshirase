@@ -24,16 +24,32 @@ provider "aws" {
   region = var.aws_region
 }
 
+# OTel の Lambda レイヤー（コミュニティ製の Python 計装・Collector と、自前の計装）
+module "otel_layers" {
+  source = "../../modules/otel_layers"
+
+  project_name = var.project_name
+  stage_name   = "dev"
+
+  # scripts/build-otel-instrumentations-layer.py の出力先
+  otel_instrumentations_layer_zip_path = "${path.root}/../../../dist/otel-instrumentations-layer.zip"
+}
+
+# 自前の計装のレイヤーは、もとは notify モジュールの中で作っていた（レイヤーの名前は同じなので作り直されない）
+moved {
+  from = module.notify.aws_lambda_layer_version.otel_instrumentations
+  to   = module.otel_layers.aws_lambda_layer_version.otel_instrumentations
+}
+
 module "notify" {
-  source = "../../modules"
+  source = "../../modules/notify"
 
   project_name          = var.project_name
   line_parameter_prefix = var.line_parameter_prefix
   log_level             = var.log_level
   stage_name            = "dev"
 
-  # scripts/build-otel-instrumentations-layer.py の出力先
-  otel_instrumentations_layer_zip_path = "${path.root}/../../../dist/otel-instrumentations-layer.zip"
+  otel_layer_arns = module.otel_layers.layer_arns
 
   # Grafana Cloud に送るための Authorization ヘッダーの値を置いた SSM パラメータ（このリポジトリの外で作る）
   grafana_otlp_auth_parameter = "/app/grafana/dev/otlp_auth"

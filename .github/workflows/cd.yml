@@ -117,7 +117,7 @@ jobs:
         run: scripts/build-docs.sh "${{ steps.version.outputs.version }}"
 
       - name: Build the OTel instrumentations layer
-        # tf/modules/main.tf の aws_lambda_layer_version.otel_instrumentations が使う zip（dist/otel-instrumentations-layer.zip）を作る
+        # tf/modules/otel_layers/main.tf の aws_lambda_layer_version.otel_instrumentations が使う zip（dist/otel-instrumentations-layer.zip）を作る
         run: python3 scripts/build-otel-instrumentations-layer.py
 
       - name: Setup Terraform
