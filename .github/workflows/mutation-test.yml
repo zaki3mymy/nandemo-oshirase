@@ -48,6 +48,7 @@ jobs:
           uv run python scripts/mutation_report.py
           --out "$RUNNER_TEMP/mutation-report.md"
           --full mutation-report-full.md
+          --summary "$RUNNER_TEMP/mutation-summary.md"
 
       - name: Upload report
         id: artifact
@@ -61,6 +62,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           REPORT_FILE: ${{ runner.temp }}/mutation-report.md
+          SUMMARY_FILE: ${{ runner.temp }}/mutation-summary.md
           ACTIONABLE: ${{ steps.report.outputs.actionable }}
           ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -79,14 +81,24 @@ jobs:
               per_page: 100,
             })
             const current = issues.find((i) => !i.pull_request && i.body?.startsWith(marker))
+            const previous = current?.body?.match(/<!-- mutation-score:([\d.]+) -->/)?.[1]
+            const withPrevious = (text) =>
+              text.replace('{{PREVIOUS_SCORE}}', previous ? `${previous}%` : 'なし')
 
             if (actionable === 0) {
               if (current) {
+                // クローズするときは本文を書き換えないので、最後の結果はコメントに残す
+                const summary = withPrevious(fs.readFileSync(process.env.SUMMARY_FILE, 'utf8'))
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: current.number,
-                  body: `対応が必要なミュータント（高・中）がなくなったので、クローズします。\n\n実行: ${process.env.RUN_URL}`,
+                  body: [
+                    '対応が必要なミュータント（高・中）がなくなったので、クローズします。',
+                    '',
+                    summary,
+                    `全件のレポート: ${process.env.ARTIFACT_URL} / 実行: ${process.env.RUN_URL}`,
+                  ].join('\n'),
                 })
                 await github.rest.issues.update({
                   owner: context.repo.owner,
@@ -102,9 +114,7 @@ jobs:
               return
             }
 
-            const previous = current?.body?.match(/<!-- mutation-score:([\d.]+) -->/)?.[1]
-            let body = fs.readFileSync(process.env.REPORT_FILE, 'utf8')
-            body = body.replace('{{PREVIOUS_SCORE}}', previous ? `${previous}%` : 'なし')
+            let body = withPrevious(fs.readFileSync(process.env.REPORT_FILE, 'utf8'))
             body = [
               marker,
               body,
