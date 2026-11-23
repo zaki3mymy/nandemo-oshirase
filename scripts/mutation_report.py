@@ -174,13 +174,11 @@ def _indent(text: str) -> str:
     return "\n".join(f"  {line}" for line in text.splitlines())
 
 
-def render(statuses: Counter[str], survived: list[Mutant], limit: int | None) -> str:
+def render_summary(statuses: Counter[str], survived: list[Mutant]) -> str:
+    """スコアと件数の表。issue の本文と、クローズするときのコメントに使う。"""
     by_level = Counter(m.level for m in survived)
     actionable = sum(by_level[lv] for lv in ACTIONABLE)
-    head = [
-        f"<!-- mutation-score:{score(statuses):.1f} -->",
-        "## ミューテーションテストの結果",
-        "",
+    lines = [
         f"スコア **{score(statuses):.1f}%**（前回 {{{{PREVIOUS_SCORE}}}}）"
         f" / 対応が必要（高・中）**{actionable} 件**",
         "",
@@ -201,7 +199,16 @@ def render(statuses: Counter[str], survived: list[Mutant], limit: int | None) ->
         f"| 中 | {by_level['中']} | 値の None への置き換え、引数の削除 |",
         f"| 低 | {by_level['低']} | 文字列リテラルだけの変更 |",
         f"| 対象外 | {by_level['対象外']} | help・metavar・span 名など |",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def render(statuses: Counter[str], survived: list[Mutant], limit: int | None) -> str:
+    head = [
+        f"<!-- mutation-score:{score(statuses):.1f} -->",
+        "## ミューテーションテストの結果",
         "",
+        render_summary(statuses, survived),
         "高・中が 0 件になると、この issue は自動でクローズされます。"
         "テストを足すか、等価なミュータントなら該当行に `# pragma: no mutate` を付けてください。"
         "差分は `uv run mutmut show <名前>` でも確認できます。",
@@ -250,12 +257,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, required=True, help="issue 本文に使うレポート")
     parser.add_argument("--full", type=Path, help="省略なしのレポート（artifact 用）")
+    parser.add_argument("--summary", type=Path, help="スコアと件数の表（クローズのコメント用）")
     args = parser.parse_args()
 
     statuses, survived = collect()
     args.out.write_text(render(statuses, survived, BODY_LIMIT), encoding="utf-8")
     if args.full:
         args.full.write_text(render(statuses, survived, None), encoding="utf-8")
+    if args.summary:
+        args.summary.write_text(render_summary(statuses, survived), encoding="utf-8")
 
     actionable = sum(1 for m in survived if m.level in ACTIONABLE)
     print(f"score={score(statuses):.1f}% survived={len(survived)} actionable={actionable}")
