@@ -64,9 +64,6 @@ jobs:
       - name: Install dependencies
         run: nix develop -c uv sync --dev
 
-      - name: Build docs
-        run: nix develop -c scripts/build-docs.sh dev
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
@@ -92,8 +89,11 @@ jobs:
           terraform -chdir=tf/envs/dev init -backend=false
 
       # pre-commit/action は内部で Node.js 20 向けの actions/cache を使うため、直接実行する。
-      # terraform は flake に入れていないので、上の setup-terraform で入れたものを使う
+      # terraform は flake に入れていないので、上の setup-terraform で入れたものを使う。
+      # 単体テスト（pytest のフック）は Test with coverage のジョブで実行するので、ここでは飛ばす
       - name: Run pre-commit
+        env:
+          SKIP: pytest
         run: nix develop -c pre-commit run --all-files --show-diff-on-failure --color=always
 
       # uv のキャッシュから、CI で取り直したほうが速いもの（ビルド済みの wheel 以外）を消してから保存する
