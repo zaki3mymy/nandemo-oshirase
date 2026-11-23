@@ -24,6 +24,12 @@ variable "log_retention_days" {
   default     = 14
 }
 
+variable "memory_size" {
+  description = "Memory size of the Lambda function in MB"
+  type        = number
+  default     = 256
+}
+
 variable "log_level" {
   description = "Log level for Lambda function (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
   type        = string
