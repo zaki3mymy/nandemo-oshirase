@@ -2,119 +2,19 @@
 
 任意のメッセージをLINEに送信するシンプルな通知API。
 
-- `POST /notify` で、任意のメッセージを LINE に送ります。
-- `oshirase` CLI で、「毎週月曜21時」のような定時のお知らせを登録できます。
-- `GET /docs` で、API のドキュメントを表示します。
+## できること
 
-## 使い方
-
-```bash
-curl -X POST <ENDPOINT> \
-  -H "x-api-key: <API_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello!"}'
-```
-
-複数メッセージを送信する場合:
-
-```bash
-curl -X POST <ENDPOINT> \
-  -H "x-api-key: <API_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"messages": ["1つ目", "2つ目", "3つ目"]}'
-```
-
-送信せずに動作を確認する場合（dry run）:
-
-```bash
-curl -X POST <ENDPOINT> \
-  -H "x-api-key: <API_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello!", "dry_run": true}'
-```
-
-`dry_run` が `true`（真偽値）のときは、LINE の認証情報の読み込み、メッセージの検証、バッチへの分割までを行い、LINE には送信しません。そのうえで、LINE の [validate API](https://developers.line.biz/en/reference/messaging-api/#validate-message-objects-of-push-message)（`POST /v2/bot/message/validate/push`）で、チャネルアクセストークンとメッセージの形式を確認します。成功すると `200` で `{"message": "Dry run: would send 1 message(s) in 1 batch(es)"}` を返します。
-
-- トークンが無効なときなど、LINE の validate API がエラーを返したときは、そのステータスコードと `{"error": "..."}` を返します。
-- 送り先（`LINE_USER_ID`）が正しいかは確認できません。
-- validate API は送信ではないので、LINE の月の送信数（無料プランは 200 通）を使いません。CD の動作確認は、dev・本番とも dry run で行います。
-
-### 再送（冪等性）
-
-同じリクエストを **15分以内** に再送したときは、送信済みのメッセージを LINE に送らず、最初のリクエストと同じレスポンスを返します。タイムアウトなどで結果が分からないときは、15分以内であれば安心して再送できます。
-
-- 同じリクエストとは、`messages`（または `message`）の内容と順番がすべて同じリクエストです。リクエスト元は区別しないので、別のシステムから同じ内容が届いたときも1回だけ送ります。
-- 6件以上のメッセージは5件ずつに分けて送ります。途中で失敗したリクエストを再送すると、失敗した分から送り直します。
-- 15分を過ぎた再送は、別のメッセージとして送ります。意図して同じメッセージを2回送りたいときは、15分以上あけてください。
-- dry run は再送の判定に含めません。
-
-仕組み：5件ずつのまとまりごとに、LINE の再送キー（`X-Line-Retry-Key`）を DynamoDB に15分間保存し、再送では同じ再送キーで LINE に送ります。送信済みの再送キーなら LINE は送らずに `409` を返すので、送信済みとして扱います。同時に届いたリクエストも、DynamoDB の条件付き書き込みで同じ再送キーになります。
-
-## 定時お知らせ（`oshirase` CLI）
-
-「毎週月曜21時に『明日は燃えるゴミです』」のような定時のお知らせを、EventBridge Scheduler から Lambda を直接 invoke して送ります。
-
-送信時刻とメッセージは AWS 上の EventBridge Scheduler にだけ保存され、このリポジトリや Terraform state には残りません。Terraform が管理するのはスケジュールグループ（`{env}-nandemo-oshirase-reminders`）と Scheduler 用 IAM ロールだけです。
-
-```bash
-# 追加
-uv run oshirase add gomi-moeru --weekly mon --at 21:00 -m "明日は燃えるゴミです"
-uv run oshirase add shigen --weekly wed --nth 2 --at 21:00 -m "明日は資源ごみです"  # 毎月第2水曜
-uv run oshirase add morning --daily --at 7:00 -m "おはよう" -m "傘を忘れずに"       # 複数メッセージ
-uv run oshirase add monthly --cron "0 8 1 * ? *" -m "月初の作業"                   # cron式を直接指定
-
-# 一覧・詳細
-uv run oshirase list
-uv run oshirase show gomi-moeru
-
-# 変更（指定した項目だけ変わる）
-uv run oshirase update gomi-moeru --at 20:30
-uv run oshirase update gomi-moeru -m "明日は燃えるゴミの日です"
-
-# 一時停止・再開・削除
-uv run oshirase disable gomi-moeru
-uv run oshirase enable gomi-moeru
-uv run oshirase delete gomi-moeru
-
-# 今すぐ送って動作確認
-uv run oshirase send gomi-moeru
-
-# dry run（時刻になっても LINE に送信せず、validate API での確認だけにする）
-uv run oshirase --env dev add check --daily --at 9:00 -m "動作確認" --dry-run
-uv run oshirase --env dev update check --no-dry-run  # 解除（--dry-run で再び dry run）
-```
-
-- 曜日は `mon,thu` のほか `月,木` でも指定できます。
-- 名前に使えるのは英数字と `- _ .` だけです（EventBridge Scheduler の制約）。
-- 「第1・第3水曜」のように1つの式で表せないものは、`shigen-1` と `shigen-3` のように2件に分けて登録します。
-- 時刻はタイムゾーン `Asia/Tokyo` で解釈します。変えたい場合は `--timezone` を指定します。
-- `--dry-run` のお知らせは、`list` と `show` で `[dry run]` と表示されます。`send` でも送信しません。dry run は LINE の月の送信数を使わないので、CD の動作確認はこれで行います。
-- 共通オプション（`--env dev`、`--profile`、`--region`）はサブコマンドより前に書きます。例：`uv run oshirase --env dev list`。`OSHIRASE_ENV` 環境変数で既定の環境を変えることもできます。
-
-CLI を実行する AWS 認証情報に必要な IAM 権限は、[docs/deployment.md](docs/deployment.md#cli-の実行に必要な-iam-権限) にまとめています。
-
-### 仕組み
-
-- スケジュールは Lambda に `{"source": "nandemo-oshirase.scheduler", "messages": [...]}` を非同期で invoke します。`--dry-run` のお知らせは `"dry_run": true` も付き、Lambda は [POST /notify の dry run](#使い方) と同じく validate API で確認するだけで送信しません。
-- 送信に失敗すると Lambda はエラーになり、1回だけリトライします。1時間以上遅れたお知らせは送りません。
-- リトライでは、[再送](#再送冪等性)と同じく送信済みのメッセージを送りません。
-
-## LINE の利用数の監視
-
-LINE の月の送信数の上限（無料プランは 200 通）に近づいていることに気づけるよう、当月の利用数と上限を Grafana Cloud で監視しています。
-
-- 別の Lambda（`{env}-nandemo-oshirase-quota`、コードは `src/nandemo_oshirase_quota`）が、LINE の [quota](https://developers.line.biz/ja/reference/messaging-api/#get-quota) と [quota/consumption](https://developers.line.biz/ja/reference/messaging-api/#get-consumption) の API を呼び、OTel のメトリクスとして送ります。どちらも読み取りだけなので、送信数は使いません。
-
-  | メトリクス（Prometheus） | 値 |
-  |---|---|
-  | `line_quota_consumption` | 当月に送ったメッセージの数（概算。LINE Official Account Manager から送った分も含む） |
-  | `line_quota_limit` | 当月の上限の目安（上限が設定されていないときは送らない） |
-
-- 定時実行は **prod だけ**で、毎日 23:55（Asia/Tokyo）に取得します。dev と prod は同じ LINE チャネル（同じ上限）を使っているためです。dev には定時実行がなく、CD のデプロイのあとに1回呼ぶだけです。
-- dev と prod は同じ値を送るので、Grafana では **環境をまたいで足さず**、`deployment_environment_name="prod"` の値だけを使います。値は Lambda の実行環境ごとに別の系列（`service_instance_id`）になるので、`max by (deployment_environment_name) (...)` でまとめてから最新の値を取ります。
+- **API でお知らせ**：`POST /notify` で、任意のメッセージを LINE に送ります。複数のメッセージもまとめて送れます。
+- **定時のお知らせ**：`oshirase` CLI で、「毎週月曜21時」のような定時のお知らせを登録できます。
+- **安心して再送**：タイムアウトなどで結果が分からなくても、15分以内の同じリクエストは二重に送りません。
+- **送らずに確認（dry run）**：LINE に送信せず、認証情報とメッセージの形式だけを確認できます。LINE の月の送信数を使いません。
+- **利用数の監視**：LINE の月の送信数と上限を Grafana Cloud で監視しています。
+- **API ドキュメント**：`GET /docs` で、API のドキュメントを表示します。
 
 ## ドキュメント
 
+- [使い方](docs/usage.md)：`POST /notify` の呼び出し方、dry run、`oshirase` CLI
+- [アーキテクチャ](docs/architecture.md)：システム構成、再送（冪等性）の仕組み、定時お知らせの仕組み、LINE の利用数の監視
 - [デプロイ](docs/deployment.md)：デプロイの前提、GitHub Secrets、LINE の認証情報、本番のテレメトリ、CLI の IAM 権限
 - [リリース](docs/release.md)：タグと GitHub リリース、PR タイトルの規約、バージョンの決め方
 - [開発](docs/development.md)：開発環境の準備、コンテナでの動作確認、結合テスト
