@@ -23,5 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/nandemo_oshirase/ ${LAMBDA_TASK_ROOT}/nandemo_oshirase/
 COPY --from=docs-builder /docs/docs.html ${LAMBDA_TASK_ROOT}/nandemo_oshirase/docs.html
+# 利用数を取得する Lambda（podman-compose の lambda-quota）も、同じイメージで command を変えて動かす
+COPY src/nandemo_oshirase_quota/ ${LAMBDA_TASK_ROOT}/nandemo_oshirase_quota/
 
 CMD ["nandemo_oshirase.lambda_function.lambda_handler"]

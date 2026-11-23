@@ -1,4 +1,5 @@
 # Lambda の Collector レイヤー（opentelemetry-lambda のコミュニティ製）の設定。
+# 利用数を取得する Lambda（src/nandemo_oshirase_quota/collector.yaml）も同じ内容にしている。変えるときは両方を変える。
 # アプリ（Python 計装レイヤー）からトレース・メトリクス・ログを OTLP で受けて、Grafana Cloud に otlphttp で送る。
 # 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/notify/main.tf）。
 receivers:

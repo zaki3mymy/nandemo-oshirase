@@ -1,0 +1,77 @@
+# Lambda の Collector レイヤー（opentelemetry-lambda のコミュニティ製）の設定。
+# 送信の Lambda（src/nandemo_oshirase/collector.yaml）と同じ内容にしている。変えるときは両方を変える。
+# アプリ（Python 計装レイヤー）からトレース・メトリクス・ログを OTLP で受けて、Grafana Cloud に otlphttp で送る。
+# 送信先と Authorization ヘッダーの値は、Lambda の環境変数で渡す（tf/modules/nandemo_oshirase_quota/main.tf）。
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+      http:
+        endpoint: localhost:4318
+  # Lambda の Telemetry API から、実行環境の初期化（コールドスタート）の開始と終了を受け取り、
+  # "init <関数名>" という span（faas.coldstart=true）を作る。トレースだけで使う
+  telemetryapi:
+
+processors:
+  # telemetryapi が作った初期化の span を、そのとき呼ばれた実行（ハンドラー）と同じトレースに入れる。
+  # 実行の span を faas.invocation_id で見分け、初期化の span を faas.coldstart で見分けるので、
+  # アプリの span に faas.coldstart を付けてはいけない
+  coldstart:
+  # Grafana Cloud に出したくない属性を消す。Lambda の計装（opentelemetry-instrumentation-aws-lambda）は、
+  # 実行の span に次の属性を付ける
+  #   - net.host.name: API Gateway のホスト（このアプリの URL）
+  #   - cloud.account.id: AWS のアカウント ID
+  #   - cloud.resource_id: 関数の ARN（アカウント ID を含む）
+  # faas.invocation_id は coldstart processor が使うので消さない
+  attributes/redact:
+    actions:
+      - key: net.host.name
+        action: delete
+      - key: cloud.account.id
+        action: delete
+      - key: cloud.resource_id
+        action: delete
+  # リソースの属性にも付くことがあるので、同じく消す
+  resource/redact:
+    attributes:
+      - key: cloud.account.id
+        action: delete
+      - key: cloud.resource_id
+        action: delete
+  # ログの本文の ARN にある AWS のアカウント ID を *** に置き換える（本文はアプリのまま送るため、
+  # 属性のように消せない。例: スケジュールからの呼び出しのログの schedule_arn）。
+  # CloudWatch Logs には元のまま出る。$$ は Collector の設定の $ のエスケープ
+  # （"$${1}" は OTTL には "${1}"、つまり 1 番目のキャプチャーとして渡る）
+  transform/redact_log_body:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "(arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:)[0-9]{12}", "$${1}***")
+  # Lambda の応答を返してから送るようにする（実行の終わりに Grafana Cloud への送信を待たない）。
+  # 送り終わるまで実行環境は止められない。パイプラインの最後に置く
+  decouple:
+
+exporters:
+  otlphttp/grafana_cloud:
+    endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:GRAFANA_CLOUD_OTLP_AUTH}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp, telemetryapi]
+      processors: [coldstart, attributes/redact, resource/redact, decouple]
+      exporters: [otlphttp/grafana_cloud]
+    metrics:
+      receivers: [otlp]
+      processors: [resource/redact, decouple]
+      exporters: [otlphttp/grafana_cloud]
+    # アプリの logging のログ（opentelemetry-instrumentation-logging が OTel のログにする）。
+    # Grafana Cloud では Loki に入り、トレース ID・span ID でトレースと紐づく
+    logs:
+      receivers: [otlp]
+      processors: [resource/redact, transform/redact_log_body, decouple]
+      exporters: [otlphttp/grafana_cloud]
