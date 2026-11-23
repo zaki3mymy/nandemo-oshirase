@@ -30,7 +30,11 @@
           ];
 
           # 開発環境に入ったときに、pre-commit のフックを入れる（入っていれば何もしない）
+          # pre-commit（nix の Python）の依存が PYTHONPATH に入り、uv run の venv より先に読み込まれてしまう。
+          # 例えば venv の platformdirs が登録する pytest のプラグインを、nix の古い platformdirs から
+          # 読もうとして pytest が起動できなくなる。pre-commit 自体は PYTHONPATH がなくても動く
           shellHook = ''
+            unset PYTHONPATH
             pre-commit install
           '';
         };
