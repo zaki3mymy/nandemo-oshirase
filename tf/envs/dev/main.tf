@@ -48,6 +48,7 @@ module "notify" {
   line_parameter_prefix = var.line_parameter_prefix
   log_level             = var.log_level
   stage_name            = "dev"
+  memory_size           = 256
 
   otel_layer_arns = module.otel_layers.layer_arns
 
@@ -64,6 +65,7 @@ module "nandemo_oshirase_quota" {
   line_parameter_prefix = var.line_parameter_prefix
   log_level             = var.log_level
   stage_name            = "dev"
+  memory_size           = 256
 
   otel_layer_arns = module.otel_layers.layer_arns
 
