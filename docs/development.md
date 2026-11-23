@@ -108,3 +108,34 @@ lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrum
 podman-compose up -d
 uv run pytest tests/integration/
 ```
+
+## ミューテーションテスト
+
+[mutmut](https://github.com/boxed/mutmut) で単体テストの検証の強さを確認できます。ソースを少し書き換えたもの（ミュータント）ごとに `tests/unit/` を流し、テストが落ちなかったもの（survived）が「実行はしているが結果を検証できていない」箇所です。設定は `pyproject.toml` の `[tool.mutmut]` にあります。
+
+```bash
+uv run mutmut run              # 実行（作業用に mutants/ が作られる）
+uv run mutmut results          # survived の一覧
+uv run mutmut show <名前>       # ミュータントの差分を表示
+uv run mutmut browse           # TUI で確認
+```
+
+mutmut は同じプロセスで pytest を何度も実行するため、hypothesis のプロファイル `mutmut`（`tests/unit/conftest.py`）を使い、カバレッジ計測も切っています。ログの文言はテストで固定しないので、`logger.` を含む行はミュータントを作りません。
+
+### 週次の issue
+
+`.github/workflows/mutation-test.yml` が毎週月曜 7:53（日本時間）に mutmut を実行し、`scripts/mutation_report.py` で survived を次のように分類します。分類は差分のトークンを比べるだけの決定論的なルールです。
+
+| 区分 | 内容 |
+|---|---|
+| 高 | 演算子・条件・制御（`and`/`or`、`+`/`-`、比較、`break`/`continue`）、数値・真偽値の変更 |
+| 中 | 値の `None` への置き換え、引数・キーワードの削除 |
+| 低 | 文字列リテラルだけの変更（例外メッセージ・dict のキー・既定値など） |
+| 対象外 | `help`・`metavar`・span 名など、振る舞いに関わらない文字列の変更 |
+
+- 高・中が 1 件以上あれば、開いている issue の本文を最新の結果で上書きします（無ければ作ります）。
+- 高・中が 0 件になったら、その issue にコメントしてクローズします。その後また見つかったら、新しい issue を作ります。
+- issue の候補は、テストを足すか、振る舞いが変わらない（等価な）ミュータントなら該当行に `# pragma: no mutate` を付けて解消します。いずれも次の実行で issue から消えます。
+- PR をマージした直後に確認したいときは、Actions の画面から手動で実行できます（`workflow_dispatch`）。
+
+ローカルでレポートを作るには、`uv run mutmut run` のあとに `uv run python scripts/mutation_report.py --out report.md` を実行します。
