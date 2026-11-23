@@ -76,6 +76,17 @@ curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
   -d '{"httpMethod":"GET","path":"/docs"}'
 ```
 
+### LINE の利用数を取得する Lambda（lambda-quota）
+
+LINE の当月の利用数と上限を取得する Lambda（`src/nandemo_oshirase_quota`）は、`lambda-quota` コンテナ（`http://localhost:9001`）で動きます。送信の Lambda と同じイメージで、ハンドラーだけを変えています。stub は上限に `{"type": "limited", "value": 200}`、利用数に `{"totalUsage": 42}` を返します。
+
+```bash
+curl -X POST "http://localhost:9001/2015-03-31/functions/function/invocations" -d '{}'
+# => {"totalUsage": 42, "limit": 200}
+```
+
+メトリクス `line_quota_consumption`・`line_quota_limit` が Prometheus に、`get_message_quota`・`get_message_consumption` の span が Jaeger（サービス `nandemo-oshirase-quota`）に届きます。
+
 ## OTelメトリクス・トレース・ログの確認
 
 lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrument` 経由で起動され、OTLP/HTTPでotel-collectorにテレメトリを送信します。上記のリクエストを送った後、以下のUIで確認できます。
