@@ -132,6 +132,18 @@ jobs:
           terraform_version: "~1.17.0"
           terraform_wrapper: false
 
+      # CI の Pre-commit checks のジョブが保存したプロバイダーのキャッシュを使う（読むだけ）
+      - name: Prepare Terraform provider cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Terraform provider cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('tf/envs/*/.terraform.lock.hcl') }}
+
       - name: Terraform Init
         run: |
           cd ${{ steps.config.outputs.tf_dir }}
@@ -205,6 +217,18 @@ jobs:
         with:
           terraform_version: "~1.17.0"
           terraform_wrapper: false
+
+      # CI の Pre-commit checks のジョブが保存したプロバイダーのキャッシュを使う（読むだけ）
+      - name: Prepare Terraform provider cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Terraform provider cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('tf/envs/*/.terraform.lock.hcl') }}
 
       - name: Terraform Init
         run: |
