@@ -217,13 +217,11 @@ jobs:
       - name: Run integration tests
         run: uv run pytest tests/integration/
 
+      # ローカルのスタックは止めない。ランナーはジョブが終わると捨てられるので、止める必要がない。
+      # 止めると、Jaeger が終了のシグナルに応えず、タイムアウト（10 秒）で強制終了されるまで待つことになる
       - name: Dump container logs
         if: failure()
         run: docker compose -f podman-compose.yml logs
-
-      - name: Stop local stack
-        if: always()
-        run: docker compose -f podman-compose.yml down -v
 
   terraform-plan:
     runs-on: ubuntu-latest
