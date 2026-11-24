@@ -206,16 +206,26 @@ jobs:
           fi
           docker compose -f podman-compose.yml up -d --no-build --no-deps lambda lambda-quota
 
+      # 1 秒おきに問い合わせ（最大 60 秒）、まだ応答しないサービスをログに出す（どれを待っているか分かるように）
       - name: Wait for services to be healthy
         run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:13133/ > /dev/null \
-              && curl -sf http://localhost:9090/-/healthy > /dev/null \
-              && curl -sf http://localhost:16686/api/services > /dev/null \
-              && curl -sf http://localhost:3100/ready > /dev/null; then
+          urls=(
+            "http://localhost:13133/"               # otel-collector
+            "http://localhost:9090/-/healthy"       # prometheus
+            "http://localhost:16686/api/services"   # jaeger
+            "http://localhost:3100/ready"           # loki
+          )
+          for i in $(seq 1 60); do
+            not_ready=()
+            for url in "${urls[@]}"; do
+              curl -sf --max-time 2 "$url" > /dev/null || not_ready+=("$url")
+            done
+            if [ ${#not_ready[@]} -eq 0 ]; then
+              echo "all services are ready (${SECONDS}s)"
               exit 0
             fi
-            sleep 2
+            echo "${SECONDS}s: not ready: ${not_ready[*]}"
+            sleep 1
           done
           echo "services did not become ready in time" >&2
           exit 1
