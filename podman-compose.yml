@@ -79,6 +79,10 @@ services:
   loki:
     # grafana/loki:3.7.9（イメージに入っている既定の設定で動かす。OTLP は /otlp で受ける）
     image: grafana/loki@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    # 既定では、準備ができてから 15 秒たつまで /ready が 200 を返さない（ingester.min-ready-duration）。
+    # ローカルの 1 台構成では待つ必要がないので 0 にする（結合テストの起動待ちが 15 秒短くなる）。
+    # command を指定するとイメージの既定の引数が置き換わるので、設定ファイルも指定する
+    command: ["-config.file=/etc/loki/local-config.yaml", "-ingester.min-ready-duration=0s"]
     ports:
       - "3100:3100"
     networks:
