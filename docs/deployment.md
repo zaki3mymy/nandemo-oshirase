@@ -17,9 +17,9 @@ API Gateway がログを CloudWatch Logs に書くためのロールは、AWS �
 
 ## デプロイ用の IAM ロールに必要な権限
 
-`AWS_ROLE_ARN` のロールには、Terraform が作るリソースを管理する権限が必要です。[再送](../README.md#再送冪等性)のために DynamoDB のテーブル（`{env}-nandemo-oshirase-retry-keys`）を作ります。ロールの権限を絞っている場合は、`dynamodb:CreateTable`、`DescribeTable`、`UpdateTable`、`DeleteTable`、`UpdateTimeToLive`、`DescribeTimeToLive`、`DescribeContinuousBackups`、`ListTagsOfResource`、`TagResource`、`UntagResource` も許可してください。
+`AWS_ROLE_ARN` のロールには、Terraform が作るリソースを管理する権限が必要です。[再送](architecture.md#再送冪等性)のために DynamoDB のテーブル（`{env}-nandemo-oshirase-retry-keys`）を作ります。ロールの権限を絞っている場合は、`dynamodb:CreateTable`、`DescribeTable`、`UpdateTable`、`DeleteTable`、`UpdateTimeToLive`、`DescribeTimeToLive`、`DescribeContinuousBackups`、`ListTagsOfResource`、`TagResource`、`UntagResource` も許可してください。
 
-LINE の利用数を取得する Lambda（[README](../README.md#line-の利用数の監視)）のために、`{env}-nandemo-oshirase-quota` の関数・IAM ロール・ロググループを作ります。prod では、さらにスケジュールグループ（`prod-nandemo-oshirase-quota`）・スケジュール・Scheduler 用の IAM ロールを作ります。また、CD は apply のあとにこの関数を1回 invoke して動作を確かめるので、ロールの権限を絞っている場合は `lambda:InvokeFunction`（`{env}-nandemo-oshirase-quota`）も許可してください。
+LINE の利用数を取得する Lambda（[アーキテクチャ](architecture.md#line-の利用数の監視)）のために、`{env}-nandemo-oshirase-quota` の関数・IAM ロール・ロググループを作ります。prod では、さらにスケジュールグループ（`prod-nandemo-oshirase-quota`）・スケジュール・Scheduler 用の IAM ロールを作ります。また、CD は apply のあとにこの関数を1回 invoke して動作を確かめるので、ロールの権限を絞っている場合は `lambda:InvokeFunction`（`{env}-nandemo-oshirase-quota`）も許可してください。
 
 ## LINE の認証情報（SSM Parameter Store）
 
