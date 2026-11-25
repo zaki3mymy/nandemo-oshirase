@@ -16,7 +16,7 @@ on:
       - ".python-version"
       - "flake.nix"
       - "flake.lock"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
   workflow_call:
 
 env:
@@ -25,7 +25,7 @@ env:
   SAVE_CACHE: ${{ github.event_name != 'pull_request' }}
 
 jobs:
-  # pre-commit は flake.nix の devShell の中で実行する（ローカルと同じ pre-commit・uv を使う）
+  # pre-commit は flake.nix の devShell の中で実行する（ローカルと同じ pre-commit・uv・actionlint を使う）
   pre-commit:
     runs-on: ubuntu-latest
     name: Pre-commit checks
@@ -215,7 +215,7 @@ jobs:
             "http://localhost:16686/api/services"   # jaeger
             "http://localhost:3100/ready"           # loki
           )
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             not_ready=()
             for url in "${urls[@]}"; do
               curl -sf --max-time 2 "$url" > /dev/null || not_ready+=("$url")
@@ -260,13 +260,17 @@ jobs:
         id: config
         run: |
           if [ "${{ github.base_ref }}" = "main" ]; then
-            echo "env=prod" >> $GITHUB_OUTPUT
-            echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
+            {
+              echo "env=prod"
+              echo "tf_dir=tf/envs/prod"
+              echo "state_key=nandemo-oshirase/terraform.tfstate"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "env=dev" >> $GITHUB_OUTPUT
-            echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
+            {
+              echo "env=dev"
+              echo "tf_dir=tf/envs/dev"
+              echo "state_key=nandemo-oshirase/dev/terraform.tfstate"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       # Test with coverage のジョブが保存した npm のキャッシュ（@redocly/cli）を使う（読むだけ）
