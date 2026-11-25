@@ -171,7 +171,13 @@ def _post_line_api(
         **(extra_headers or {}),
     }
     body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers=headers,
+        # data を渡すと urllib は POST で送るので、method を変えても振る舞いは同じ（明示のため）
+        method="POST",  # pragma: no mutate
+    )
 
     try:
         with urllib.request.urlopen(request) as response:
@@ -425,7 +431,11 @@ def _batch_key(user_id: str, messages: list[str], batch_index: int) -> str:
     1つのリクエストに2回あっても、別のバッチとして扱う。リクエスト元は含めない
     （受け取る人は同じなので、別のシステムからの同じリクエストも重複として扱う）。
     """
-    payload = json.dumps([user_id, messages, batch_index], ensure_ascii=False)
+    payload = json.dumps(
+        [user_id, messages, batch_index],
+        # ASCII にエスケープしてもしなくても、入力が違えばキーも違うので、どちらでもよい
+        ensure_ascii=False,  # pragma: no mutate
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

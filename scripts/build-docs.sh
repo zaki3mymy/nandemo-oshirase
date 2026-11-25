@@ -29,5 +29,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 sed "s/^  version: \"0\.0\.0-dev\"\$/  version: \"$version\"/" "$spec" > "$tmp/openapi.yaml"
 
-npx --yes @redocly/cli build-docs "$tmp/openapi.yaml" --output "$output"
+# @redocly/cli のバージョンを固定する（毎回最新を取ると、CI でダウンロードし直しになり、出力も変わりうる）。
+# 上げるときは、Containerfile の docs-builder の Node.js のバージョンで動くかも確かめる
+# バージョンが決まっているので、npm のキャッシュにあれば、レジストリに問い合わせずにそれを使う
+redocly_cli_version="2.82.0"
+npm_config_prefer_offline=true npx --yes "@redocly/cli@$redocly_cli_version" build-docs "$tmp/openapi.yaml" --output "$output"
 echo "Built $output (version: $version)"

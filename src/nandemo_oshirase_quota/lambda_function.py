@@ -112,7 +112,8 @@ def _get_line_api(path: str, channel_token: str) -> dict[str, Any]:
     request = urllib.request.Request(
         f"{base_url}{path}",
         headers={"Authorization": f"Bearer {channel_token}"},
-        method="GET",
+        # data を渡さないと urllib は GET で送るので、method を変えても振る舞いは同じ（明示のため）
+        method="GET",  # pragma: no mutate
     )
     try:
         with urllib.request.urlopen(request, timeout=LINE_API_TIMEOUT_SECONDS) as response:

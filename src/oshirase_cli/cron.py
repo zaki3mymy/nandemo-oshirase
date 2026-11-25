@@ -129,7 +129,8 @@ def describe(expression: str) -> str:
 
     if dom == "?":
         if "#" in dow:
-            day, _, nth = dow.partition("#")
+            # rpartition でも振る舞いは同じ（# が2つ以上あると、どちらでも曜日か第N が不正になる）
+            day, _, nth = dow.partition("#")  # pragma: no mutate
             label = _day_label(day)
             if label and nth.isdigit():
                 return f"毎月第{nth}{label}曜 {time}"

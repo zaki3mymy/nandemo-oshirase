@@ -88,7 +88,11 @@ def build_input(messages: list[str], dry_run: bool = False) -> str:
     # dry run でないお知らせの Input は今までと同じにする（キーを付けない）
     if dry_run:
         payload["dry_run"] = True
-    return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(
+        payload,
+        # ensure_ascii=None も偽なので、False と振る舞いは同じ
+        ensure_ascii=False,  # pragma: no mutate
+    )
 
 
 class ReminderService:
@@ -200,7 +204,11 @@ class ReminderService:
         res = self.lambda_client.invoke(
             FunctionName=self.config.function_name,
             InvocationType="RequestResponse",
-            Payload=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            Payload=json.dumps(
+                payload,
+                # ensure_ascii=None も偽なので、False と振る舞いは同じ
+                ensure_ascii=False,  # pragma: no mutate
+            ).encode("utf-8"),
         )
         body = res["Payload"].read().decode("utf-8")
         if res.get("FunctionError"):

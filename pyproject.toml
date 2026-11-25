@@ -3,7 +3,7 @@ name = "nandemo-oshirase"
 # バージョンは git のタグから setuptools-scm で決める（[tool.setuptools_scm] を参照）
 dynamic = ["version"]
 description = "A simple notification app that sends messages to LINE"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "opentelemetry-distro==0.66b1",
     "opentelemetry-exporter-otlp-proto-http==1.45.1",
@@ -35,8 +35,16 @@ exclude_lines = [
     "if __name__ == .__main__.:",
 ]
 
+[tool.mutmut]
+source_paths = ["src/"]
+pytest_add_cli_args_test_selection = ["tests/unit/"]
+# addopts の --cov-fail-under=100 がミュータントごとの実行で効かないようにカバレッジを切る
+pytest_add_cli_args = ["--no-cov", "--hypothesis-profile=mutmut"]
+# ログの文言はテストで固定しないので、ミュータントを作らない
+do_not_mutate_patterns = ['logger\.']
+
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
@@ -58,6 +66,7 @@ cli = [
 dev = [
     "hypothesis>=6.170.14",
     "moto[dynamodb,iam,scheduler,server]>=5.2.5",
+    "mutmut>=3.8.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.15.0",

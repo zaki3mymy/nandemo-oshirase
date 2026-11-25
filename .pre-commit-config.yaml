@@ -49,4 +49,10 @@ repos:
         files: \.tf$
         pass_filenames: false
 
+    -   id: actionlint
+        name: Lint GitHub Actions workflows
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
 default_install_hook_types: [pre-commit]

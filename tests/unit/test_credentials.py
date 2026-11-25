@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import boto3
 import pytest
-from botocore.exceptions import EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.stub import Stubber
 
 from nandemo_oshirase import lambda_function
@@ -174,6 +174,17 @@ class TestFailures:
 
         assert "AccessDeniedException" in str(excinfo.value)
         assert "123456789012" not in str(excinfo.value)
+
+    def test_client_error_without_code(self, ssm):
+        """エラーコードのない ClientError でも、Unknown として MissingCredentialError にする"""
+        with patch.dict(os.environ, PARAM_ENV, clear=True):
+            with patch.object(
+                lambda_function._get_ssm_client(),
+                "get_parameters",
+                side_effect=ClientError({}, "GetParameters"),
+            ):
+                with pytest.raises(MissingCredentialError, match=r"\(Unknown\)"):
+                    load_line_credentials()
 
     def test_connection_error(self, ssm):
         with patch.dict(os.environ, PARAM_ENV, clear=True):

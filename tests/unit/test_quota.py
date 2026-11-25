@@ -6,11 +6,11 @@ import os
 import urllib.error
 from collections.abc import Iterator
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import boto3
 import pytest
-from botocore.exceptions import EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.stub import Stubber
 from opentelemetry._logs._internal import ProxyLoggerProvider
 from opentelemetry.sdk._logs import LoggerProvider
@@ -96,6 +96,17 @@ class TestLoadChannelToken:
             with pytest.raises(QuotaError, match=r"\(ParameterNotFound\)"):
                 load_channel_token()
 
+    def test_raises_on_client_error_without_code(self):
+        """エラーコードのない ClientError でも、Unknown として QuotaError にする"""
+        client = MagicMock()
+        client.get_parameter.side_effect = ClientError({}, "GetParameter")
+        with (
+            patch.object(lambda_function, "_create_ssm_client", return_value=client),
+            patch.dict(os.environ, {"LINE_CHANNEL_TOKEN_PARAM": TOKEN_PARAM}, clear=True),
+        ):
+            with pytest.raises(QuotaError, match=r"\(Unknown\)"):
+                load_channel_token()
+
     def test_raises_on_botocore_error(self):
         client = MagicMock()
         client.get_parameter.side_effect = EndpointConnectionError(endpoint_url="http://ssm")
@@ -133,6 +144,8 @@ class TestGetMessageQuota:
         assert request.full_url == "http://stub:3000/v2/bot/message/quota"
         assert request.get_method() == "GET"
         assert request.get_header("Authorization") == "Bearer token"
+        # 応答がないときに Lambda のタイムアウトまで待たないよう、タイムアウトを付けて呼ぶ
+        assert urlopen.call_args.kwargs["timeout"] == lambda_function.LINE_API_TIMEOUT_SECONDS
 
     def test_uses_line_api_by_default(self, urlopen: MagicMock):
         urlopen.return_value = _response({"type": "limited", "value": 200})
@@ -193,19 +206,28 @@ class TestRecordQuota:
         with (
             patch(f"{MODULE}._consumption_gauge") as consumption,
             patch(f"{MODULE}._limit_gauge") as limit,
+            patch(f"{MODULE}.trace") as mock_trace,
         ):
             record_quota(Quota(total_usage=42, limit=200))
         consumption.set.assert_called_once_with(42)
         limit.set.assert_called_once_with(200)
+        assert mock_trace.get_current_span.return_value.set_attribute.mock_calls == [
+            call("line.quota.total_usage", 42),
+            call("line.quota.limit", 200),
+        ]
 
     def test_does_not_record_limit_when_no_limit_is_set(self):
         with (
             patch(f"{MODULE}._consumption_gauge") as consumption,
             patch(f"{MODULE}._limit_gauge") as limit,
+            patch(f"{MODULE}.trace") as mock_trace,
         ):
             record_quota(Quota(total_usage=42, limit=None))
         consumption.set.assert_called_once_with(42)
         limit.set.assert_not_called()
+        assert mock_trace.get_current_span.return_value.set_attribute.mock_calls == [
+            call("line.quota.total_usage", 42),
+        ]
 
 
 class TestLambdaHandler:
@@ -226,6 +248,11 @@ class TestLambdaHandler:
         assert result == {"totalUsage": 42, "limit": 200}
         consumption.set.assert_called_once_with(42)
         limit.set.assert_called_once_with(200)
+        # 利用数・上限のどちらの API も、読み込んだトークンで呼ぶ
+        assert [c.args[0].get_header("Authorization") for c in urlopen.call_args_list] == [
+            "Bearer token",
+            "Bearer token",
+        ]
 
     def test_raises_and_flushes_logs_on_error(self, urlopen: MagicMock):
         urlopen.side_effect = _http_error(500, "Internal Server Error")

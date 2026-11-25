@@ -32,14 +32,15 @@ class TestPushMessages:
         with patch("nandemo_oshirase.lambda_function.urllib.request.urlopen") as mock_urlopen:
             mock_response = MagicMock()
             mock_response.status = 200
-            mock_response.read.return_value = b"{}"
+            mock_response.read.return_value = b'{"sentMessages": [{"id": "1"}]}'
             mock_response.__enter__ = MagicMock(return_value=mock_response)
             mock_response.__exit__ = MagicMock(return_value=False)
             mock_urlopen.return_value = mock_response
 
             result = push_messages(messages, "test_token", "test_user_id")
 
-            assert result["statusCode"] == 200
+            # LINE API のレスポンスの本文をそのまま返す
+            assert result == {"statusCode": 200, "body": '{"sentMessages": [{"id": "1"}]}'}
             mock_urlopen.assert_called_once()
 
             call_args = mock_urlopen.call_args

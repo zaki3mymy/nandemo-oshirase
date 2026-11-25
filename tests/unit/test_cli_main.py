@@ -5,6 +5,7 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import patch
 
 import boto3
 import pytest
@@ -16,6 +17,8 @@ from oshirase_cli.main import (
     SCHEDULER_EVENT_SOURCE,
     Config,
     ReminderService,
+    build_input,
+    build_parser,
     main,
 )
 
@@ -209,9 +212,58 @@ class TestAdd:
         assert main(argv, stubs.service) == 1
         assert message in capsys.readouterr().err
 
+    def test_weekly_nth(self, stubs, capsys):
+        """--nth は数値として受け取り、cron 式の第N週まで渡す"""
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "create_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("shigen", "cron(0 21 ? * 4#2 *)", ["資源ゴミ"]),
+        )
+
+        argv = ["add", "shigen", "--weekly", "水", "--nth", "2", "--at", "21:00", "-m", "資源ゴミ"]
+        assert main(argv, stubs.service) == 0
+        assert "shigen  [有効]  毎月第2水曜 21:00" in capsys.readouterr().out
+
     def test_value_error_exit_code_2(self, stubs, capsys):
         assert main(["add", "a", "--daily", "--at", "25:00", "-m", "x"], stubs.service) == 2
         assert "範囲外" in capsys.readouterr().err
+
+
+class TestParser:
+    """コマンドラインの引数の既定値と、必須・選択肢の制約"""
+
+    def test_defaults(self, monkeypatch):
+        monkeypatch.delenv("OSHIRASE_ENV", raising=False)
+        args = build_parser().parse_args(["list"])
+        assert (args.env, args.region, args.project, args.timezone) == (
+            "prod",
+            "ap-northeast-1",
+            "nandemo-oshirase",
+            "Asia/Tokyo",
+        )
+
+    def test_env_from_environment_variable(self, monkeypatch):
+        monkeypatch.setenv("OSHIRASE_ENV", "dev")
+        assert build_parser().parse_args(["list"]).env == "dev"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param([], id="command-required"),
+            pytest.param(["--env", "staging", "list"], id="env-choices"),
+            pytest.param(["add", "a", "--daily", "--at", "21:00"], id="add-message-required"),
+            pytest.param(
+                ["add", "a", "--weekly", "mon", "--nth", "x", "--at", "21:00", "-m", "m"],
+                id="nth-must-be-int",
+            ),
+        ],
+    )
+    def test_rejected_by_parser(self, argv, capsys):
+        with pytest.raises(SystemExit) as excinfo:
+            build_parser().parse_args(argv)
+        assert excinfo.value.code == 2
+        assert "error:" in capsys.readouterr().err
 
 
 class TestAddDryRun:
@@ -290,7 +342,23 @@ class TestShow:
         expect_not_found(stubs, "get_schedule", "a")
 
         assert main(["show", "a"], stubs.service) == 1
-        assert "見つかりません" in capsys.readouterr().err
+        assert "お知らせ 'a' が見つかりません" in capsys.readouterr().err
+
+    def test_default_timezone_is_not_shown(self, stubs, capsys):
+        """既定のタイムゾーン（Asia/Tokyo）は表示せず、それ以外は表示する"""
+        expect_get(stubs, "a", get_response("a", "cron(30 7 * * ? *)", ["朝"]))
+        expect_get(
+            stubs,
+            "b",
+            get_response(
+                "b", "cron(30 7 * * ? *)", ["朝"], ScheduleExpressionTimezone="Europe/London"
+            ),
+        )
+
+        assert main(["show", "a"], stubs.service) == 0
+        assert capsys.readouterr().out.splitlines()[0] == "a  [有効]  毎日 07:30"
+        assert main(["show", "b"], stubs.service) == 0
+        assert capsys.readouterr().out.splitlines()[0] == "b  [有効]  毎日 07:30 (Europe/London)"
 
     def test_other_error(self, stubs, capsys):
         stubs.scheduler.add_client_error("get_schedule", service_error_code="ThrottlingException")
@@ -462,7 +530,7 @@ class TestDelete:
         expect_not_found(stubs, "delete_schedule", "a")
 
         assert main(["delete", "a"], stubs.service) == 1
-        assert "見つかりません" in capsys.readouterr().err
+        assert "お知らせ 'a' が見つかりません" in capsys.readouterr().err
 
     def test_other_error(self, stubs, capsys):
         stubs.scheduler.add_client_error("delete_schedule", service_error_code="ConflictException")
@@ -500,7 +568,8 @@ class TestSend:
         self._expect_invoke(stubs, b'{"statusCode": 200}')
 
         assert main(["send", "a"], stubs.service) == 0
-        assert "送信しました" in capsys.readouterr().out
+        # Lambda のレスポンスをそのまま表示する
+        assert '送信しました: {"statusCode": 200}' in capsys.readouterr().out
 
     def test_send_dry_run(self, stubs):
         expect_get(stubs, "a", get_response("a", "cron(30 7 * * ? *)", ["朝"], dry_run=True))
@@ -524,6 +593,37 @@ class TestSend:
 
         assert main(["send", "a"], stubs.service) == 1
         assert "送信に失敗しました" in capsys.readouterr().err
+
+
+class TestServiceDefaults:
+    """dry_run を指定しないときは、dry run にしない"""
+
+    def test_build_input_without_dry_run(self):
+        assert json.loads(build_input(["朝"])) == json.loads(input_json(["朝"]))
+
+    def test_add_without_dry_run(self, stubs):
+        stubs.expect_account()
+        stubs.scheduler.add_response(
+            "create_schedule",
+            {"ScheduleArn": "arn"},
+            schedule_params("a", "cron(30 7 * * ? *)", ["朝"]),
+        )
+
+        reminder = stubs.service.add("a", "cron(30 7 * * ? *)", ["朝"])
+
+        assert reminder.dry_run is False
+
+
+class TestCreateService:
+    def test_main_creates_service_from_args(self, stubs, capsys):
+        """service を渡さないときは、引数から作ったサービスを使う"""
+        stubs.scheduler.add_response("list_schedules", {"Schedules": []}, {"GroupName": GROUP})
+
+        with patch("oshirase_cli.main.create_service", return_value=stubs.service) as create:
+            assert main(["--region", "us-east-1", "list"]) == 0
+
+        (args,) = create.call_args.args
+        assert (args.command, args.region) == ("list", "us-east-1")
 
 
 class TestAccountIdCached:

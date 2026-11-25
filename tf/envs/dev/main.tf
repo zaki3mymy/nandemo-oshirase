@@ -35,12 +35,6 @@ module "otel_layers" {
   otel_instrumentations_layer_zip_path = "${path.root}/../../../dist/otel-instrumentations-layer.zip"
 }
 
-# 自前の計装のレイヤーは、もとは notify モジュールの中で作っていた（レイヤーの名前は同じなので作り直されない）
-moved {
-  from = module.notify.aws_lambda_layer_version.otel_instrumentations
-  to   = module.otel_layers.aws_lambda_layer_version.otel_instrumentations
-}
-
 module "notify" {
   source = "../../modules/notify"
 
@@ -48,7 +42,7 @@ module "notify" {
   line_parameter_prefix = var.line_parameter_prefix
   log_level             = var.log_level
   stage_name            = "dev"
-  memory_size           = 256
+  memory_size           = 1024
 
   otel_layer_arns = module.otel_layers.layer_arns
 

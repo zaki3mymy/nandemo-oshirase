@@ -54,7 +54,7 @@ cp .env.example .env.local
 
 `podman-compose` を使い、lambdaコンテナ（AWS Lambda Runtime Interface Emulator）と、LINE APIのスタブ（`mockoon/cli`）、OTelのテレメトリ収集・可視化スタック（otel-collector / Jaeger / Prometheus / Loki / Grafana）を起動して疎通確認できます。lambdaコンテナは `LINE_API_BASE_URL=http://stub:3000` を参照し、本番のLINE APIではなくstubにリクエストを送ります。
 
-[再送](../README.md#再送冪等性)の再送キーは DynamoDB Local（`dynamodb`、`http://localhost:8000`）に保存します。テーブルは `dynamodb-init` が起動時に作ります（データはメモリにだけあり、止めると消えます）。stub の push API は、ボディに `__error__` が含まれると `500` を、`__already_sent__` が含まれると `409`（送信済みの再送キー）を返します。
+[再送](architecture.md#再送冪等性)の再送キーは DynamoDB Local（`dynamodb`、`http://localhost:8000`）に保存します。テーブルは `dynamodb-init` が起動時に作ります（データはメモリにだけあり、止めると消えます）。stub の push API は、ボディに `__error__` が含まれると `500` を、`__already_sent__` が含まれると `409`（送信済みの再送キー）を返します。
 
 ```bash
 podman-compose up --build
@@ -108,3 +108,60 @@ lambdaコンテナは `AWS_LAMBDA_EXEC_WRAPPER` により `opentelemetry-instrum
 podman-compose up -d
 uv run pytest tests/integration/
 ```
+
+## ミューテーションテスト
+
+[mutmut](https://github.com/boxed/mutmut) で単体テストの検証の強さを確認できます。ソースを少し書き換えたもの（ミュータント）ごとに `tests/unit/` を流し、テストが落ちなかったもの（survived）が「実行はしているが結果を検証できていない」箇所です。設定は `pyproject.toml` の `[tool.mutmut]` にあります。
+
+```bash
+uv run mutmut run              # 実行（作業用に mutants/ が作られる）
+uv run mutmut results          # survived の一覧
+uv run mutmut show <名前>       # ミュータントの差分を表示
+uv run mutmut browse           # TUI で確認
+```
+
+mutmut は同じプロセスで pytest を何度も実行するため、hypothesis のプロファイル `mutmut`（`tests/unit/conftest.py`）を使い、カバレッジ計測も切っています。ログの文言はテストで固定しないので、`logger.` を含む行はミュータントを作りません。
+
+### 週次の issue
+
+`.github/workflows/mutation-test.yml` が毎週月曜 7:53（日本時間）に mutmut を実行し、`scripts/mutation_report.py` で survived を次のように分類します。分類は差分のトークンを比べるだけの決定論的なルールです。
+
+| 区分 | 内容 |
+|---|---|
+| 高 | 演算子・条件・制御（`and`/`or`、`+`/`-`、比較、`break`/`continue`）、数値・真偽値の変更 |
+| 中 | 値の `None` への置き換え、引数・キーワードの削除 |
+| 低 | 文字列リテラルだけの変更（例外メッセージ・dict のキー・既定値など） |
+| 対象外 | `help`・`metavar`・span 名など、振る舞いに関わらない文字列の変更 |
+
+- 高・中が 1 件以上あれば、開いている issue の本文を最新の結果で上書きします（無ければ作ります）。
+- 高・中が 0 件になったら、その issue にコメントしてクローズします。その後また見つかったら、新しい issue を作ります。
+- PR をマージした直後に確認したいときは、Actions の画面から手動で実行できます（`workflow_dispatch`）。
+
+ローカルでレポートを作るには、`uv run mutmut run` のあとに `uv run python scripts/mutation_report.py --out report.md` を実行します。
+
+### issue の候補の直し方
+
+テストファイルの単位（例: Lambda のルーティングと送信、CLI の引数）でまとめて 1 つの PR にします。候補ごとに、次のどちらかで解消します。
+
+- **テストを足す**: ミュータントの差分を見て、その変更で結果が変わることを確かめるテストを書きます。ログの文言は固定せず、ログに出す値（`record.args`）を確かめるのは構いません。
+- **等価なミュータントとして除く**: 変更しても振る舞いが変わらない（例: `data` を渡した `urllib.request.Request` の `method="POST"`）なら、その引数の行に `# pragma: no mutate` を付けます。理由はすぐ上の行にコメントで書きます（pragma の後ろに続けると、`block` などの指定と紛らわしくなるため）。pragma は付けた行の変更だけを止めるので、ほかの引数の変更も止めないよう、引数を 1 行ずつに分けてから付けます。
+
+```python
+request = urllib.request.Request(
+    url,
+    data=body,
+    headers=headers,
+    # data を渡すと urllib は POST で送るので、method を変えても振る舞いは同じ（明示のため）
+    method="POST",  # pragma: no mutate
+)
+```
+
+直ったかどうかは、全件を流し直さず、名前（ワイルドカード可）で絞って確認できます。名前を指定すると、前回の結果があっても実行し直します。
+
+```bash
+uv run mutmut run "nandemo_oshirase.lambda_function.x_route__mutmut_*"   # 関数の単位
+uv run mutmut run "nandemo_oshirase.lambda_function.*"                    # モジュールの単位
+uv run mutmut results                                                     # survived が消えたか
+```
+
+マージ後の週次の実行（または手動実行）で issue から消え、高・中が 0 件になれば issue は自動でクローズされます。

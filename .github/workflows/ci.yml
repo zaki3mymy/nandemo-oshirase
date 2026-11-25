@@ -16,16 +16,16 @@ on:
       - ".python-version"
       - "flake.nix"
       - "flake.lock"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
   workflow_call:
 
 env:
-  # キャッシュ（nix のストア・uv・pre-commit）は develop・main への push で CD から呼ばれたときだけ保存する。
+  # キャッシュ（nix のストア・uv・pre-commit・Terraform のプロバイダー）は develop・main への push で CD から呼ばれたときだけ保存する。
   # PR で作ったキャッシュはその PR でしか使えないので、PR では読むだけにする
   SAVE_CACHE: ${{ github.event_name != 'pull_request' }}
 
 jobs:
-  # pre-commit は flake.nix の devShell の中で実行する（ローカルと同じ pre-commit・uv を使う）
+  # pre-commit は flake.nix の devShell の中で実行する（ローカルと同じ pre-commit・uv・actionlint を使う）
   pre-commit:
     runs-on: ubuntu-latest
     name: Pre-commit checks
@@ -37,12 +37,13 @@ jobs:
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
 
-      # ツールが変わるのは flake.nix・flake.lock が変わったときだけなので、それをキーにする
+      # ツールが変わるのは flake.nix・flake.lock が変わったときだけなので、それをキーにする。
+      # キーが違う古いキャッシュは復元しない。復元すると、使わなくなったストアのパスまで新しいキャッシュに入り、
+      # キャッシュが大きくなり続ける（復元に時間がかかる）。キーが変わった直後の 1 回だけ、ツールをダウンロードし直す
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
           save: ${{ env.SAVE_CACHE }}
 
       # uv のパッケージのキャッシュと、pre-commit のフックの環境（pre-commit-hooks など）。
@@ -64,13 +65,24 @@ jobs:
       - name: Install dependencies
         run: nix develop -c uv sync --dev
 
-      - name: Build docs
-        run: nix develop -c scripts/build-docs.sh dev
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "~1.17.0"
+
+      # Terraform のプロバイダー（aws は大きく、1回 7 秒ほどかかる）を毎回ダウンロードしないよう、プラグインのキャッシュを使う。
+      # プロバイダーが変わるのは .terraform.lock.hcl が変わったときだけなので、それをキーにする
+      - name: Prepare Terraform provider cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Terraform provider cache
+        id: tf-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('tf/envs/*/.terraform.lock.hcl') }}
 
       - name: Terraform init (for validate)
         run: |
@@ -78,8 +90,11 @@ jobs:
           terraform -chdir=tf/envs/dev init -backend=false
 
       # pre-commit/action は内部で Node.js 20 向けの actions/cache を使うため、直接実行する。
-      # terraform は flake に入れていないので、上の setup-terraform で入れたものを使う
+      # terraform は flake に入れていないので、上の setup-terraform で入れたものを使う。
+      # 単体テスト（pytest のフック）は Test with coverage のジョブで実行するので、ここでは飛ばす
       - name: Run pre-commit
+        env:
+          SKIP: pytest
         run: nix develop -c pre-commit run --all-files --show-diff-on-failure --color=always
 
       # uv のキャッシュから、CI で取り直したほうが速いもの（ビルド済みの wheel 以外）を消してから保存する
@@ -96,6 +111,13 @@ jobs:
             ~/.cache/pre-commit
           key: ${{ steps.tool-cache.outputs.cache-primary-key }}
 
+      - name: Save Terraform provider cache
+        if: env.SAVE_CACHE == 'true' && steps.tf-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ steps.tf-cache.outputs.cache-primary-key }}
+
   test-unit:
     runs-on: ubuntu-latest
     name: Test with coverage
@@ -111,8 +133,24 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      # scripts/build-docs.sh の npx が取る @redocly/cli を、npm のキャッシュから使う。
+      # バージョンは build-docs.sh で固定しているので、build-docs.sh をキーにする。保存はほかのキャッシュと同じく SAVE_CACHE のときだけ
+      - name: Restore npm cache
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('scripts/build-docs.sh') }}
+
       - name: Build docs
         run: scripts/build-docs.sh dev
+
+      - name: Save npm cache
+        if: env.SAVE_CACHE == 'true' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
 
       - name: Run tests
         run: uv run pytest --cov-report=html --cov-report=term
@@ -143,19 +181,51 @@ jobs:
       - name: Create local env file
         run: cp .env.example .env.local
 
+      # Lambda 以外のサービスの起動（イメージの pull が大半）と、Lambda のイメージのビルドを同時に行い、
+      # 両方が終わってから Lambda を起動する。
+      # Lambda のイメージ（lambda・lambda-quota で共通）は 1 回だけビルドし、compose が付ける名前
+      # （<プロジェクト名>-<サービス名>）で両方のタグを付ける（compose でビルドすると、サービスごとに書き出す）。
+      # ビルドのキャッシュ（type=gha）は使わない。GitHub Actions のキャッシュから層（pip install の約 160MB）を
+      # ダウンロードして展開するほうが、ベースイメージを取得して pip install し直すより遅かった（28 秒と 15 秒）
       - name: Start local stack
-        run: docker compose -f podman-compose.yml up -d --build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki lambda lambda-quota
+        run: |
+          docker compose -f podman-compose.yml up -d --no-build stub dynamodb dynamodb-init otel-collector jaeger prometheus loki &
+          services=$!
+          docker build -f Containerfile -t nandemo-oshirase-lambda:latest -t nandemo-oshirase-lambda-quota:latest . &
+          build=$!
+          # どちらかが失敗したら、wait が失敗の終了コードを返し、ステップが失敗する
+          wait "$services"
+          wait "$build"
+          # Lambda は dynamodb-init（テーブルを作って終わる）の完了を待つ設定なので、ここで完了を確かめる。
+          # そのうえで --no-deps で起動する（依存先も指定すると、終わった dynamodb-init がもう一度動き、
+          # テーブルがすでにあるので失敗する）
+          init_exit=$(docker wait "$(docker compose -f podman-compose.yml ps -aq dynamodb-init)")
+          if [ "$init_exit" != "0" ]; then
+            echo "dynamodb-init failed with exit code $init_exit" >&2
+            exit 1
+          fi
+          docker compose -f podman-compose.yml up -d --no-build --no-deps lambda lambda-quota
 
+      # 1 秒おきに問い合わせ（最大 60 秒）、まだ応答しないサービスをログに出す（どれを待っているか分かるように）
       - name: Wait for services to be healthy
         run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:13133/ > /dev/null \
-              && curl -sf http://localhost:9090/-/healthy > /dev/null \
-              && curl -sf http://localhost:16686/api/services > /dev/null \
-              && curl -sf http://localhost:3100/ready > /dev/null; then
+          urls=(
+            "http://localhost:13133/"               # otel-collector
+            "http://localhost:9090/-/healthy"       # prometheus
+            "http://localhost:16686/api/services"   # jaeger
+            "http://localhost:3100/ready"           # loki
+          )
+          for _ in $(seq 1 60); do
+            not_ready=()
+            for url in "${urls[@]}"; do
+              curl -sf --max-time 2 "$url" > /dev/null || not_ready+=("$url")
+            done
+            if [ ${#not_ready[@]} -eq 0 ]; then
+              echo "all services are ready (${SECONDS}s)"
               exit 0
             fi
-            sleep 2
+            echo "${SECONDS}s: not ready: ${not_ready[*]}"
+            sleep 1
           done
           echo "services did not become ready in time" >&2
           exit 1
@@ -163,13 +233,11 @@ jobs:
       - name: Run integration tests
         run: uv run pytest tests/integration/
 
+      # ローカルのスタックは止めない。ランナーはジョブが終わると捨てられるので、止める必要がない。
+      # 止めると、Jaeger が終了のシグナルに応えず、タイムアウト（10 秒）で強制終了されるまで待つことになる
       - name: Dump container logs
         if: failure()
         run: docker compose -f podman-compose.yml logs
-
-      - name: Stop local stack
-        if: always()
-        run: docker compose -f podman-compose.yml down -v
 
   terraform-plan:
     runs-on: ubuntu-latest
@@ -192,14 +260,25 @@ jobs:
         id: config
         run: |
           if [ "${{ github.base_ref }}" = "main" ]; then
-            echo "env=prod" >> $GITHUB_OUTPUT
-            echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
+            {
+              echo "env=prod"
+              echo "tf_dir=tf/envs/prod"
+              echo "state_key=nandemo-oshirase/terraform.tfstate"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "env=dev" >> $GITHUB_OUTPUT
-            echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
+            {
+              echo "env=dev"
+              echo "tf_dir=tf/envs/dev"
+              echo "state_key=nandemo-oshirase/dev/terraform.tfstate"
+            } >> "$GITHUB_OUTPUT"
           fi
+
+      # Test with coverage のジョブが保存した npm のキャッシュ（@redocly/cli）を使う（読むだけ）
+      - name: Restore npm cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('scripts/build-docs.sh') }}
 
       # Lambda の zip（src/nandemo_oshirase）には docs.html が含まれる。CD と同じく生成しないと
       # zip の内容が変わり、plan に Lambda の source_code_hash の差分が出てしまう。
@@ -227,6 +306,18 @@ jobs:
           terraform_version: "~1.17.0"
           # terraform output -raw の値をそのまま使うため、ラッパーを無効にする
           terraform_wrapper: false
+
+      # Pre-commit checks のジョブが保存したプロバイダーのキャッシュを使う（読むだけ）
+      - name: Prepare Terraform provider cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore Terraform provider cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('tf/envs/*/.terraform.lock.hcl') }}
 
       - name: Terraform Init
         run: |
