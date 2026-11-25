@@ -28,5 +28,5 @@ resource "aws_lambda_layer_version" "otel_instrumentations" {
   description         = "OTel instrumentations missing from the community layer (urllib, logging) for ${local.name_prefix}"
   filename            = var.otel_instrumentations_layer_zip_path
   source_code_hash    = filebase64sha256(var.otel_instrumentations_layer_zip_path)
-  compatible_runtimes = ["python3.13"]
+  compatible_runtimes = ["python3.14"]
 }
