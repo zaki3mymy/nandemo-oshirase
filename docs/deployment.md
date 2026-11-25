@@ -45,7 +45,7 @@ aws ssm put-parameter --type SecureString --name /app/nandemo_oshirase/prod/line
 
 Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どちらも [opentelemetry-lambda](https://github.com/open-telemetry/opentelemetry-lambda) のコミュニティ製）をアタッチしています。アプリが送ったトレース・メトリクス・ログを Collector が受け取り、Grafana Cloud に OTLP で送ります。
 
-Lambda のランタイム（`python3.14`）は、コミュニティの Python計装レイヤーを作った Python と同じバージョンにしています。レイヤーに入っている `.pyc` はそれを作った Python のバージョン（今は python3.14。`cpython-314`）でしか使えず、違うバージョンのランタイムでは、`/opt` に書き込めないので、コールドスタートのたびにレイヤーのモジュール（約290個）をすべてコンパイルし直すことになります（python3.13 だったときは、これでコールドスタートが1秒ほど長くなっていました）。レイヤーを上げるときは、そのタグの `python/src/otel/Dockerfile` のビルド用のイメージの Python のバージョンが変わっていないかを確認し、変わっていればランタイムも合わせて上げてください。
+Lambda のランタイムの Python は、コミュニティの Python計装レイヤーを作った Python（今は 3.14）と同じバージョンにしています。違うとレイヤーの `.pyc` が使われず、コールドスタートのたびにコンパイルし直すので遅くなります（経緯は #162）。レイヤーを上げるときは、そのタグの `python/src/otel/Dockerfile` の Python のバージョンも確認してください。
 
 | テレメトリ | バックエンド | 確認方法 |
 |---|---|---|
