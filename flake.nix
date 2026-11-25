@@ -27,6 +27,8 @@
             pre-commit
             # scripts/build-docs.sh の npx（@redocly/cli で API のドキュメントをビルドする）
             nodejs
+            # GitHub Actions のワークフローのチェック（nixpkgs の actionlint は shellcheck・pyflakes を同梱している）
+            actionlint
             # terraform は unfree でビルド済みのものがなく、ソースからのビルドに時間がかかるので入れない（別に入れる）
           ];
 

@@ -72,13 +72,17 @@ jobs:
         id: config
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "env=prod" >> $GITHUB_OUTPUT
-            echo "tf_dir=tf/envs/prod" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase/terraform.tfstate" >> $GITHUB_OUTPUT
+            {
+              echo "env=prod"
+              echo "tf_dir=tf/envs/prod"
+              echo "state_key=nandemo-oshirase/terraform.tfstate"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "env=dev" >> $GITHUB_OUTPUT
-            echo "tf_dir=tf/envs/dev" >> $GITHUB_OUTPUT
-            echo "state_key=nandemo-oshirase/dev/terraform.tfstate" >> $GITHUB_OUTPUT
+            {
+              echo "env=dev"
+              echo "tf_dir=tf/envs/dev"
+              echo "state_key=nandemo-oshirase/dev/terraform.tfstate"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Configure AWS credentials
@@ -199,10 +203,12 @@ jobs:
           STATE_KEY: ${{ needs.deploy.outputs.state_key }}
           VERSION: ${{ needs.deploy.outputs.version }}
         run: |
-          echo "env=$ENV" >> "$GITHUB_OUTPUT"
-          echo "tf_dir=$TF_DIR" >> "$GITHUB_OUTPUT"
-          echo "state_key=$STATE_KEY" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "env=$ENV"
+            echo "tf_dir=$TF_DIR"
+            echo "state_key=$STATE_KEY"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -309,12 +315,12 @@ jobs:
           ENV: ${{ steps.config.outputs.env }}
         run: |
           NAME="ci-${{ github.run_id }}"
-          uv run oshirase --env $ENV add "$NAME" --weekly sun --at 03:00 -m "CI smoke test"
-          uv run oshirase --env $ENV list | grep -q "^$NAME "
-          uv run oshirase --env $ENV show "$NAME"
-          uv run oshirase --env $ENV update "$NAME" --at 04:00
-          uv run oshirase --env $ENV disable "$NAME"
-          uv run oshirase --env $ENV delete "$NAME"
+          uv run oshirase --env "$ENV" add "$NAME" --weekly sun --at 03:00 -m "CI smoke test"
+          uv run oshirase --env "$ENV" list | grep -q "^$NAME "
+          uv run oshirase --env "$ENV" show "$NAME"
+          uv run oshirase --env "$ENV" update "$NAME" --at 04:00
+          uv run oshirase --env "$ENV" disable "$NAME"
+          uv run oshirase --env "$ENV" delete "$NAME"
 
       # スケジュールから Lambda が呼ばれ、メッセージを確認できるところまでを確かめる。
       - name: Smoke test scheduler fires Lambda
@@ -322,7 +328,7 @@ jobs:
         run: |
           NAME="ci-fire-${{ github.run_id }}"
           START_MS=$(( $(date +%s) * 1000 ))
-          read MIN HOUR DAY MONTH YEAR <<< "$(TZ=Asia/Tokyo date -d '+2 min' '+%M %H %d %m %Y')"
+          read -r MIN HOUR DAY MONTH YEAR <<< "$(TZ=Asia/Tokyo date -d '+2 min' '+%M %H %d %m %Y')"
           uv run oshirase --env dev add "$NAME" \
             --cron "$((10#$MIN)) $((10#$HOUR)) $((10#$DAY)) $((10#$MONTH)) ? $YEAR" \
             -m "CI smoke test: scheduler fired (${{ github.sha }})" \
@@ -374,7 +380,7 @@ jobs:
         if: always()
         env:
           ENV: ${{ steps.config.outputs.env }}
-        run: uv run oshirase --env $ENV delete "ci-${{ github.run_id }}" || true
+        run: uv run oshirase --env "$ENV" delete "ci-${{ github.run_id }}" || true
 
       - name: Cleanup scheduler fire test
         if: always() && steps.config.outputs.env == 'dev'
