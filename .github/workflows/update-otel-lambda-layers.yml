@@ -1,7 +1,9 @@
 name: Update OTel Lambda layers
 
 # OTel のコミュニティの Lambda レイヤー（Python 計装・Collector）の新しいバージョンが出ていたら、
-# tf/modules/otel_layers/main.tf のレイヤーの ARN と pyproject.toml・uv.lock の OTel の依存を上げる PR を develop に作る。
+# tf/modules/otel_layers/main.tf の Collector レイヤーの ARN と、pyproject.toml・uv.lock の OTel の依存
+# （Python 計装レイヤーと同じバージョン）を上げる PR を develop に作る。Python のレイヤーは自前で作っていて、
+# ARN は Terraform が管理するので、OTel の依存が上がれば次のデプロイで作り直される。
 # Dependabot はレイヤーの ARN を見ないので、その代わり。
 #
 # - repository_dispatch: opentelemetry-lambda のリリースを feed-release-invoke-workflow が知らせる

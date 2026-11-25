@@ -43,7 +43,7 @@ aws ssm put-parameter --type SecureString --name /app/nandemo_oshirase/prod/line
 
 ## 本番環境のOTelテレメトリ
 
-Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どちらも [opentelemetry-lambda](https://github.com/open-telemetry/opentelemetry-lambda) のコミュニティ製）をアタッチしています。アプリが送ったトレース・メトリクス・ログを Collector が受け取り、Grafana Cloud に OTLP で送ります。
+Lambdaには、OTel の Python のレイヤー（自前。下の「OTel の Python のレイヤー」を参照）と、Collectorレイヤー（[opentelemetry-lambda](https://github.com/open-telemetry/opentelemetry-lambda) のコミュニティ製）をアタッチしています。アプリが送ったトレース・メトリクス・ログを Collector が受け取り、Grafana Cloud に OTLP で送ります。
 
 | テレメトリ | バックエンド | 確認方法 |
 |---|---|---|
@@ -57,23 +57,24 @@ Lambdaには OTel の Python計装レイヤーと Collectorレイヤー（どち
 - コールドスタートのときは、実行環境の初期化が `init <関数名>`（属性 `faas.coldstart=true`）という span になり、そのとき呼ばれた実行と同じトレースに入ります（Collector の `telemetryapi` receiver と `coldstart` processor）。また、初回の boto3 のクライアントの作成は `create_ssm_client`・`create_dynamodb_client` という span になります。
 - Lambda の計装が付ける属性のうち、API Gateway のホスト（`net.host.name`）、AWS のアカウント ID（`cloud.account.id`）、関数の ARN（`cloud.resource_id`）は、Collector で消してから送ります（`attributes/redact`・`resource/redact`）。
 - メトリクスは累積値（cumulative）で送ります。Lambda の実行環境が作り直されるとカウンタは 0 から数え直すので、Grafana では `increase()` や `rate()` で集計してください。
-- ログは、アプリの `logging` のログを `opentelemetry-instrumentation-logging`（自前の計装のレイヤー）が OTel のログにして送ります。ログにはそのときの span の `trace_id`・`span_id` が付くので、Grafana でトレースとログを行き来できます。CloudWatch Logs にも今までどおり出ます。
+- ログは、アプリの `logging` のログを `opentelemetry-instrumentation-logging`（Python のレイヤー）が OTel のログにして送ります。ログにはそのときの span の `trace_id`・`span_id` が付くので、Grafana でトレースとログを行き来できます。CloudWatch Logs にも今までどおり出ます。
 - Lambda の計装は、実行の終わりにトレースとメトリクスしか flush しません。ログは SDK がまとめて送るので、そのままでは応答を返したあとに実行環境が凍結され、次の呼び出しまで送られない（実行環境が止まると失われる）ことがあります。そのため、`lambda_handler` の最後でログを flush しています（`lambda_function.py` の `flush_logs`）。
 - ログの本文は、ARN の中の AWS のアカウント ID を Collector で `***` に置き換えてから送ります（`transform/redact_log_body`。例: スケジュールからの呼び出しのログの `schedule_arn`）。CloudWatch Logs には元のまま出ます。ほかはそのまま送るので、送り先の LINE のユーザー ID（`user_id=...`・webhook の `userId=...`）も含まれます。
 
-### 自前の計装のレイヤー
+### OTel の Python のレイヤー
 
-コミュニティの Python計装レイヤーには、次の計装が入っていません。そのため、これらを入れたレイヤーを自前で作り、コミュニティのレイヤーに重ねています（`tf/modules/otel_layers/main.tf` の `aws_lambda_layer_version.otel_instrumentations`）。
+OTel の SDK・計装と、ハンドラーのラッパーを入れたレイヤーを自前で作っています（`tf/modules/otel_layers/main.tf` の `aws_lambda_layer_version.otel_python`）。コミュニティの Python計装レイヤーは使いません。
 
-| 計装 | 無いと |
-|---|---|
-| `opentelemetry-instrumentation-urllib` | LINE API の呼び出しの span が出ない |
-| `opentelemetry-instrumentation-logging` | `logging` のログが OTel のログとして送られない |
+コミュニティの Python計装レイヤーは python3.14 で作られていて、入っている `.pyc` は python3.14 用（`cpython-314`）だけです。python3.13 の Lambda ではそれを使えず、`/opt` には書き込めないので、コールドスタートのたびにレイヤーのモジュール（約290個）をすべてコンパイルし直していました。自前のレイヤーには python3.13 用の `.pyc` を入れているので、コンパイルせずに読み込めます（手元で測ると、ラッパーの起動にかかる時間がおよそ半分になりました）。
 
-- zip は `scripts/build-otel-instrumentations-layer.py` で作ります（CI の terraform-plan と CD で、Terraform の前に実行します）。依存するパッケージはコミュニティのレイヤーにあるので、これらの計装だけを `--no-deps` で入れます。計装を足すときは、スクリプトの `PACKAGES` と `pyproject.toml` の両方に足します。同じバージョンなら zip のハッシュは変わらないので、レイヤーは作り直されません。
-- バージョンは `uv.lock` のものを使います。`pyproject.toml` の OTel の依存は、コミュニティの Python計装レイヤー（タグの `requirements.txt`）と同じバージョンに `==` で固定しています（ローカルと本番のバージョンをそろえるため）。Dependabot では OTel のパッケージを上げません（`.github/dependabot.yml` の `ignore`）。
-- レイヤーの ARN（コミュニティの2つと自前の1つ）は `tf/modules/otel_layers` にまとめ、重ねる順番もそこで決めています。Lambda のモジュールは、その output の `layer_arns` をそのまま `layers` に渡します。
-- コミュニティのレイヤーの新しいバージョンは、`.github/workflows/update-otel-lambda-layers.yml` が見つけて、`tf/modules/otel_layers/main.tf` の ARN と `pyproject.toml`・`uv.lock` の OTel の依存を一緒に上げる PR を develop に作ります。opentelemetry-lambda のリリースは feed-release-invoke-workflow の `repository_dispatch`（`otel-lambda-release`）で知り、取りこぼしに備えて週1回の `schedule` でも確認します。
+- zip は `scripts/build-otel-python-layer.py` で作ります（CI の terraform-plan と CD で、Terraform の前に `uv run --no-project --python 3.13` で実行します）。`.pyc` はそれを作った Python のマイナーバージョンでしか使えないので、Lambda のランタイムと同じ python3.13 で実行します。
+- 入れるパッケージは、`uv.lock` のアプリの依存（`pyproject.toml` の `dependencies` とその依存）です。Lambda のランタイムにある boto3・botocore・urllib3 などは入れません。計装を足すときは、`pyproject.toml` の `dependencies` に足すだけで、レイヤーにも入ります。
+- 入れる wheel は、Lambda（x86_64、python3.13）用のものです（ビルドする環境の Python のものではありません）。
+- `.pyc` は、ソースのハッシュで検証する形（unchecked-hash）で、`/opt/python` のパスで作ります。作った日時やビルドしたディレクトリが入らないので、同じ `uv.lock` なら zip のハッシュは変わらず、レイヤーは作り直されません。
+- ハンドラーのラッパー（`/opt/otel-handler` など）は、コミュニティの Python計装レイヤーのものを `layers/otel-python` に持ってきて、そのまま入れています（`layers/otel-python/README.md` を参照）。
+- `pyproject.toml` の OTel の依存は、コミュニティの Python計装レイヤー（タグの `requirements.txt`・`nodeps-requirements.txt`）と同じバージョンに `==` で固定しています。Dependabot では OTel のパッケージを上げません（`.github/dependabot.yml` の `ignore`）。
+- レイヤーの ARN（自前の Python のレイヤーと、コミュニティの Collector レイヤー）は `tf/modules/otel_layers` にまとめ、重ねる順番もそこで決めています。Lambda のモジュールは、その output の `layer_arns` をそのまま `layers` に渡します。
+- コミュニティのレイヤーの新しいバージョンは、`.github/workflows/update-otel-lambda-layers.yml` が見つけて、`tf/modules/otel_layers/main.tf` の Collector レイヤーの ARN と `pyproject.toml`・`uv.lock` の OTel の依存（Python計装レイヤーのバージョン）を一緒に上げる PR を develop に作ります。Python のレイヤーは、OTel の依存が上がれば次のデプロイで作り直されます。そのときは、`layers/otel-python` のラッパーが同じタグのものから変わっていないかも確認してください。opentelemetry-lambda のリリースは feed-release-invoke-workflow の `repository_dispatch`（`otel-lambda-release`）で知り、取りこぼしに備えて週1回の `schedule` でも確認します。
 
 ### Grafana Cloud の認証情報
 

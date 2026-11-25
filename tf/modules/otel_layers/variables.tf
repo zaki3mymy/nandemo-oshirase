@@ -8,7 +8,7 @@ variable "stage_name" {
   type        = string
 }
 
-variable "otel_instrumentations_layer_zip_path" {
-  description = "Path to the zip of the Lambda layer with the OTel instrumentations missing from the community layer (built by scripts/build-otel-instrumentations-layer.py)"
+variable "otel_python_layer_zip_path" {
+  description = "Path to the zip of the OTel Python Lambda layer (built by scripts/build-otel-python-layer.py)"
   type        = string
 }

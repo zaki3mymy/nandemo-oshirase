@@ -9,6 +9,8 @@ on:
       - "tf/**"
       - "openapi.yaml"
       - "scripts/**"
+      # OTel の Python のレイヤーに入るハンドラーのラッパー
+      - "layers/**"
       - "Containerfile"
       - "pyproject.toml"
       - "uv.lock"
@@ -283,9 +285,14 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh "$(git describe --tags)"
 
-      - name: Build the OTel instrumentations layer
-        # tf/modules/otel_layers/main.tf の aws_lambda_layer_version.otel_instrumentations が使う zip（dist/otel-instrumentations-layer.zip）を作る
-        run: python3 scripts/build-otel-instrumentations-layer.py
+      # Build the OTel Python layer が使う（uv のバージョンは pyproject.toml の required-version で決まる）
+      - name: Install uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+
+      - name: Build the OTel Python layer
+        # tf/modules/otel_layers/main.tf の aws_lambda_layer_version.otel_python が使う zip（dist/otel-python-layer.zip）を作る。
+        # .pyc は Lambda と同じ python3.13 で作る必要があるので、uv で python3.13 を使って実行する
+        run: uv run --no-project --python 3.13 scripts/build-otel-python-layer.py
 
       - name: Configure AWS credentials
         id: aws

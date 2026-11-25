@@ -8,6 +8,8 @@ on:
       - "tf/**"
       - "openapi.yaml"
       - "scripts/**"
+      # OTel の Python のレイヤーに入るハンドラーのラッパー
+      - "layers/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/cd.yml"
@@ -129,9 +131,10 @@ jobs:
       - name: Build docs
         run: scripts/build-docs.sh "${{ steps.version.outputs.version }}"
 
-      - name: Build the OTel instrumentations layer
-        # tf/modules/otel_layers/main.tf の aws_lambda_layer_version.otel_instrumentations が使う zip（dist/otel-instrumentations-layer.zip）を作る
-        run: python3 scripts/build-otel-instrumentations-layer.py
+      - name: Build the OTel Python layer
+        # tf/modules/otel_layers/main.tf の aws_lambda_layer_version.otel_python が使う zip（dist/otel-python-layer.zip）を作る。
+        # .pyc は Lambda と同じ python3.13 で作る必要があるので、uv で python3.13 を使って実行する
+        run: uv run --no-project --python 3.13 scripts/build-otel-python-layer.py
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
