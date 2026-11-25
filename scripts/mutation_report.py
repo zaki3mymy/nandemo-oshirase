@@ -66,7 +66,7 @@ def tokens(source: str) -> list[Token] | None:
     try:
         gen = tokenize.generate_tokens(io.StringIO(source.strip() + "\n").readline)
         return [(t.type, t.string) for t in gen if t.type not in skip]
-    except (tokenize.TokenError, IndentationError, SyntaxError):
+    except tokenize.TokenError, IndentationError, SyntaxError:
         return None
 
 
